@@ -24,6 +24,10 @@ Tutto il prototipo è in **[hop-on.html](hop-on.html)** (un solo file, nessun bu
 
 `Core` contiene: `Config`, `MODES`/`modeFromRouteType`, `Geo`, `Time`, `Csv`, `GtfsRt` (decoder protobuf scritto a mano), `GtfsStatic` + `finalizeIndex` (zip GTFS → indice a array tipizzati), `Demo`, `Realtime`, `Engine` (isocrona con Connection Scan Algorithm a round).
 
+`Engine.isochrone` salva per ogni round e fermata il "genitore" (corsa + fermata di salita, oppure fermata da cui si arriva a piedi); `Engine.journey` lo usa per ricostruire l'itinerario verso un punto qualsiasi, `Engine.nextDepartures` dà i passaggi successivi a una fermata.
+
+**Interazioni sulla mappa:** tocco breve = "Come arrivarci" (vista `journey` nel pannello; fuori dall'area → messaggio breve); pressione prolungata ≥ 550 ms o clic destro = sposta la partenza; il PIN resta trascinabile. Le linee disegnate non sono toccabili (coprirebbero l'area): una linea si seleziona dalla lista, da un mezzo live o da un badge nell'itinerario.
+
 `app` contiene: `Prefs` (localStorage `hopon.prefs.v1`), `Cache` (IndexedDB `hopon`/`kv`), `Net`, `MapView` (Leaflet + layer isocrona su canvas), `UI`, `Sheet`, `Settings`, `Data`, `Boot`.
 
 ## Regole del codice

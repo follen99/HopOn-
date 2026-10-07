@@ -125,6 +125,10 @@ button { cursor: pointer; }
 }
 .veh.dim { opacity: .35; }
 .stop-dot-label { font: 600 12px/1.2 var(--f-body); }
+#map { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.dest { width: 22px; height: 22px; border-radius: 50%; background: var(--ink); border: 5px solid var(--surface); box-shadow: 0 0 0 2px var(--ink), var(--shadow); }
+.leaflet-tooltip.j-tip { font-weight: 600; padding: 4px 8px; border-radius: 6px; }
+.leaflet-tooltip.j-tip b { font-family: var(--f-display); }
 
 /* ---------- Barra in alto ---------- */
 .topbar {
@@ -219,8 +223,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 .line-item:active { background: var(--surface-2); }
 .badge {
   min-width: 40px; height: 30px; padding: 0 8px; border-radius: 8px; display: grid; place-items: center;
-  color: #fff; font: 700 15px/1 var(--f-display); letter-spacing: -.01em;
+  color: #fff; font: 700 15px/1 var(--f-display); letter-spacing: -.01em; white-space: nowrap;
 }
+button.badge { border: 0; }
 .badge.metro { border-radius: 50%; min-width: 30px; width: 30px; padding: 0; }
 .li-main { min-width: 0; }
 .li-main .t { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -233,7 +238,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 /* dettaglio linea */
 .detail-head { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
 .detail-head h3 { margin: 0; font: 700 18px/1.2 var(--f-display); min-width: 0; }
-.back { border: 0; background: var(--surface-2); border-radius: 999px; padding: 7px 12px; font-size: 14px; }
+.back { border: 0; background: var(--surface-2); border-radius: 999px; padding: 7px 12px; font-size: 14px; white-space: nowrap; flex: none; }
 .board-card { background: var(--surface-2); border-radius: var(--r-md); padding: 12px 14px; display: grid; gap: 4px; }
 .board-card .big { font: 700 17px/1.25 var(--f-display); }
 .board-card .meta { font-size: 13px; color: var(--muted); }
@@ -246,6 +251,30 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 .stops li.out .node { border-color: var(--hairline); }
 .stops .rail { position: absolute; left: 8px; top: 12px; bottom: 12px; width: 2px; background: var(--hairline); }
 .stops time { font: 500 13px/1 var(--f-mono); font-variant-numeric: tabular-nums; }
+.hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+
+/* itinerario ("Come arrivarci") */
+.j-chain { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.j-chain .badge { min-width: 34px; height: 26px; font-size: 14px; }
+.j-chain .badge.metro { width: 26px; min-width: 26px; }
+.j-arrow { color: var(--muted); font-weight: 700; }
+.itin { list-style: none; margin: 14px 0 6px; padding: 0; position: relative; }
+.it { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: start; padding: 10px 0; position: relative; }
+.it + .it { border-top: 1px solid var(--hairline); }
+.it-ic { display: grid; place-items: center; min-height: 30px; color: var(--muted); }
+.it-ic svg { width: 22px; height: 22px; }
+.it-ic .badge { min-width: 40px; }
+.it-ic .dest { width: 18px; height: 18px; border-width: 4px; }
+.it-body { min-width: 0; display: grid; gap: 4px; font-size: 14px; }
+.it > time, .it-stop time { font: 500 14px/1.3 var(--f-mono); font-variant-numeric: tabular-nums; }
+.it-sub, .it-meta { font-size: 13px; color: var(--muted); }
+.it-sub b { color: var(--ink); font-weight: 700; }
+.it-stop { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding-left: 10px; border-left: 4px solid var(--line-c, var(--ink)); }
+.it-ride .it-body { grid-column: 2 / 4; }
+.it-wait .it-body { color: var(--muted); font-size: 13px; align-self: center; }
+.code { font: 500 11px/1 var(--f-mono); color: var(--muted); }
+.it-more summary { font-size: 13px; color: var(--muted); margin: 0; font-weight: 400; padding: 2px 0 2px 14px; }
+.it-more .stops { margin-top: 4px; }
 
 /* ---------- Modal impostazioni ---------- */
 .modal { position: fixed; inset: 0; z-index: 1000; background: rgba(10,14,12,.45); display: grid; align-items: end; }
@@ -324,9 +353,10 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
     <div id="view-main">
       <div class="summary">
         <h2 id="sum-title">Dove arrivi in 20 min</h2>
-        <span class="sub" id="sum-sub">Tocca la mappa per spostare il punto di partenza</span>
+        <span class="sub" id="sum-sub">Calcolo l'area raggiungibile…</span>
       </div>
       <div class="legend" id="legend"></div>
+      <p class="hint">Tocca un punto della mappa per vedere come arrivarci. Tieni premuto per spostare la partenza.</p>
 
       <div class="controls">
         <div class="ctl">
@@ -356,6 +386,7 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
     </div>
 
     <div id="view-detail" hidden></div>
+    <div id="view-journey" hidden></div>
   </div>
 </section>
 
@@ -1037,6 +1068,9 @@ const Engine = {
     const grid = Engine.grid(idx);
     const best = new Float64Array(nS).fill(INF);
     const arr = []; for (let k = 0; k <= K; k++) arr.push(new Float64Array(nS).fill(INF));
+    // genitori per ricostruire l'itinerario: per round e fermata, la corsa presa (e dove si è saliti) oppure la fermata da cui si è arrivati a piedi
+    const parTrip = [], parBoard = [], parWalk = [];
+    for (let k = 0; k <= K; k++) { parTrip.push(new Int32Array(nS).fill(-1)); parBoard.push(new Int32Array(nS).fill(-1)); parWalk.push(new Int32Array(nS).fill(-1)); }
     const viaTrip = new Int32Array(nS).fill(-1);
     const tripRound = new Int8Array(nT), boardStop = new Int32Array(nT).fill(-1), boardTime = new Float64Array(nT);
     const tripMode = idx.routes.mode, troute = idx.trips.route;
@@ -1076,13 +1110,13 @@ const Engine = {
       }
       if (r === 0) continue;
       if (arv < arr[r][to]) {
-        arr[r][to] = arv;
+        arr[r][to] = arv; parTrip[r][to] = t; parBoard[r][to] = boardStop[t]; parWalk[r][to] = -1;
         if (arv < best[to]) { best[to] = arv; viaTrip[to] = t; }
         if (r < K) {
           const nb = neighbours(to);
           for (let j = 0; j < nb.length; j += 2) {
             const n = nb[j], tw = arv + nb[j + 1] / o.walkMps;
-            if (tw <= end && tw < arr[r][n]) { arr[r][n] = tw; if (tw < best[n]) best[n] = tw; }
+            if (tw <= end && tw < arr[r][n]) { arr[r][n] = tw; parTrip[r][n] = -1; parWalk[r][n] = to; if (tw < best[n]) best[n] = tw; }
           }
         }
       }
@@ -1106,7 +1140,91 @@ const Engine = {
       if (!cur || cand.round < cur.round || (cand.round === cur.round && cand.boardTime < cur.boardTime)) e.byDir[d] = cand;
     }
     let reachedStops = 0; for (let s = 0; s < nS; s++) if (best[s] <= end) reachedStops++;
-    return { best, viaTrip, routes, reachedStops, nowSec: o.nowSec, end, opts: o };
+    return { best, viaTrip, routes, reachedStops, nowSec: o.nowSec, end, opts: o, arr, par: { trip: parTrip, board: parBoard, walk: parWalk }, accessDist };
+  },
+  /**
+   * Itinerario migliore dall'origine a un punto qualsiasi, usando i risultati di isochrone().
+   * Restituisce null se il punto non è raggiungibile entro il tempo, altrimenti
+   * { arrive, leave, rides, walk, legs: [ {type:"walk", from, to, dist, dep, arr} | {type:"ride", trip, route, kFrom, kTo, from, to, dep, arr, live} ] }
+   * dove from/to dei tratti a piedi sono { stop } oppure { lat, lon } (origine o destinazione).
+   */
+  journey(idx, res, lat, lon) {
+    const o = res.opts, mps = o.walkMps, K = res.arr.length - 1;
+    let bestT = Infinity, bestS = -1, bestK = -1, bestD = 0;
+    const d0 = Geo.dist(o.lat, o.lon, lat, lon);
+    if (d0 <= o.maxWalk && res.nowSec + d0 / mps <= res.end) bestT = res.nowSec + d0 / mps;
+    const near = Engine.grid(idx).near(lat, lon, o.maxWalk);
+    for (let i = 0; i < near.length; i += 2) {
+      const s = near[i], d = near[i + 1];
+      for (let k = 0; k <= K; k++) {
+        const t = res.arr[k][s] + d / mps;
+        if (t <= res.end && (t < bestT - 0.5 || (Math.abs(t - bestT) <= 0.5 && bestS >= 0 && k < bestK))) { bestT = t; bestS = s; bestK = k; bestD = d; }
+      }
+    }
+    if (bestT === Infinity) return null;
+    const P = { lat, lon }, O = { lat: o.lat, lon: o.lon };
+    if (bestS < 0) return Engine._summary(res, [{ type: "walk", from: O, to: P, dist: d0, dep: res.nowSec, arr: bestT }], bestT);
+
+    // risalita dei genitori: tratto finale a piedi, poi corse e cambi a ritroso
+    const legs = [{ type: "walk", from: { stop: bestS }, to: P, dist: bestD, dep: res.arr[bestK][bestS], arr: bestT }];
+    const { start, stop, time } = idx.tstops, delay = o.rt && o.rt.delay, known = o.rt && o.rt.known;
+    let k = bestK, s = bestS, guard = 0;
+    while (guard++ < 50) {
+      if (k === 0) {
+        const d = res.accessDist.get(s) || 0;
+        legs.push({ type: "walk", from: O, to: { stop: s }, dist: d, dep: res.nowSec, arr: res.nowSec + d / mps });
+        break;
+      }
+      const w = res.par.walk[k][s];
+      if (w >= 0) {
+        const d = Geo.dist(idx.stops.lat[w], idx.stops.lon[w], idx.stops.lat[s], idx.stops.lon[s]);
+        legs.push({ type: "walk", from: { stop: w }, to: { stop: s }, dist: d, dep: res.arr[k][w], arr: res.arr[k][s] });
+        s = w; continue;
+      }
+      const t = res.par.trip[k][s], b = res.par.board[k][s];
+      if (t < 0 || b < 0) return null;
+      let kFrom = -1, kTo = -1;
+      for (let j = start[t]; j < start[t + 1]; j++) if (stop[j] === b) { kFrom = j; break; }
+      for (let j = Math.max(kFrom + 1, start[t]); j < start[t + 1]; j++) if (stop[j] === s) { kTo = j; break; }
+      if (kFrom < 0 || kTo < 0) return null;
+      const dl = delay ? delay[t] : 0;
+      legs.push({ type: "ride", trip: t, route: idx.trips.route[t], kFrom, kTo, from: b, to: s, dep: time[kFrom] + dl, arr: Math.max(time[kFrom], time[kTo]) + dl, live: !!(known && known[t]) });
+      s = b; k--;
+    }
+    legs.reverse();
+    // tratti a piedi consecutivi (cambio + ultimo tratto) uniti in uno solo; tratti di 0 m eliminati
+    const out = [];
+    for (const l of legs) {
+      const p = out[out.length - 1];
+      if (l.type === "walk" && p && p.type === "walk") { p.to = l.to; p.dist += l.dist; p.arr = l.arr; }
+      else out.push(l);
+    }
+    return Engine._summary(res, out.filter((l) => l.type === "ride" || l.dist >= 1), bestT);
+  },
+  _summary(res, legs, arrive) {
+    const rides = legs.filter((l) => l.type === "ride"), mps = res.opts.walkMps;
+    const walk = legs.reduce((a, l) => a + (l.type === "walk" ? l.dist : 0), 0);
+    // ora massima in cui uscire per prendere la prima corsa (senza aspettare alla fermata)
+    const first = legs[0], leave = rides.length && first.type === "walk" && legs[1] === rides[0] ? rides[0].dep - first.dist / mps : rides.length ? rides[0].dep : res.nowSec;
+    return { arrive, leave: Math.max(res.nowSec, leave), rides: rides.length, walk, legs };
+  },
+  /** Prossimi passaggi della stessa linea e direzione a una fermata, dopo un certo orario. */
+  nextDepartures(idx, route, dir, stopIdx, afterSec, n, rt) {
+    if (!idx._routeTrips) {
+      const m = new Map(); idx.trips.route.forEach((r, t) => { const a = m.get(r); if (a) a.push(t); else m.set(r, [t]); });
+      Object.defineProperty(idx, "_routeTrips", { value: m, enumerable: false });
+    }
+    const { start, stop, time } = idx.tstops, out = [];
+    for (const t of idx._routeTrips.get(route) || []) {
+      if (idx.trips.dir[t] !== dir || (rt && rt.cancelled && rt.cancelled[t])) continue;
+      for (let j = start[t]; j + 1 < start[t + 1]; j++) {
+        if (stop[j] !== stopIdx || time[j] < 0) continue;
+        const dep = time[j] + (rt && rt.delay ? rt.delay[t] : 0);
+        if (dep > afterSec) out.push({ trip: t, dep, live: !!(rt && rt.known && rt.known[t]) });
+        break;
+      }
+    }
+    return out.sort((a, b) => a.dep - b.dep).slice(0, n);
   },
   /** Punti per il disegno: origine + ogni fermata raggiunta, con il tempo già trascorso. */
   isoPoints(idx, res) {
@@ -1193,7 +1311,10 @@ const state = {
   rt: { delays: null, vehicles: [], alerts: [], fetchedAt: 0, error: null, feedTs: 0 },
   result: null,
   selected: -1,
-  view: "main",
+  view: "main",              // main | detail | journey
+  dest: null,                // punto toccato sulla mappa (vista "Come arrivarci")
+  journey: null,
+  journeyFit: false,
 };
 if (!state.prefs.origin) state.prefs.origin = { ...Config.defaultOrigin };
 const walkMps = () => state.prefs.walkKmh / 3.6;
@@ -1278,8 +1399,31 @@ const MapView = (() => {
     draggable: true, zIndexOffset: 1000, keyboard: true, title: "Punto di partenza",
     icon: L.divIcon({ className: "", html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 34] }),
   }).addTo(map);
+  const journeyLayer = L.layerGroup().addTo(map);
+  let dest = null;
   pin.on("dragend", () => { const p = pin.getLatLng(); UI.setOrigin(p.lat, p.lng, false); });
-  map.on("click", (e) => UI.setOrigin(e.latlng.lat, e.latlng.lng, false));
+
+  /* Tocco breve → come arrivare lì. Pressione prolungata (o clic destro) → sposta la partenza. */
+  const LONG_PRESS_MS = 550;
+  let press = null, suppressUntil = 0;
+  const box = map.getContainer();
+  const cancelPress = () => { if (press) { clearTimeout(press.timer); press = null; } };
+  const longPress = (latlng) => {
+    cancelPress(); suppressUntil = Date.now() + 800;
+    if (navigator.vibrate) try { navigator.vibrate(15); } catch {}
+    UI.setOrigin(latlng.lat, latlng.lng, false); toast("Partenza spostata qui");
+  };
+  box.addEventListener("pointerdown", (e) => {
+    cancelPress();
+    if (!e.isPrimary || e.button !== 0 || e.target.closest(".leaflet-marker-icon, .leaflet-control")) return;
+    const x = e.clientX, y = e.clientY;
+    press = { x, y, timer: setTimeout(() => longPress(map.mouseEventToLatLng({ clientX: x, clientY: y })), LONG_PRESS_MS) };
+  });
+  box.addEventListener("pointermove", (e) => { if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) cancelPress(); });
+  box.addEventListener("pointerup", cancelPress); box.addEventListener("pointercancel", cancelPress);
+  map.on("movestart zoomstart", cancelPress);
+  map.on("contextmenu", (e) => { if (Date.now() >= suppressUntil) longPress(e.latlng); });
+  map.on("click", (e) => { if (Date.now() >= suppressUntil) UI.tapPoint(e.latlng.lat, e.latlng.lng); });
 
   const routeColor = (idx, r) => idx.routes.color[r] && idx.routes.color[r] !== "#" ? idx.routes.color[r] : css(MODES[idx.routes.mode[r]].css);
   const shapeLatLngs = (idx, s, fallbackTrip) => {
@@ -1294,7 +1438,7 @@ const MapView = (() => {
   };
 
   function drawLines(idx, res, selected) {
-    linesLayer.clearLayers(); stopsLayer.clearLayers();
+    drawJourney(idx, null, null);
     if (!res) return;
     const has = selected >= 0;
     const ordered = [...res.routes.keys()].sort((a, b) => (a === selected) - (b === selected));
@@ -1304,8 +1448,7 @@ const MapView = (() => {
       rs.trips.forEach((t, i) => {
         const ll = shapeLatLngs(idx, rs.shapes[i], t); if (ll.length < 2) return;
         if (sel) L.polyline(ll, { color: css("--surface"), weight: 10, opacity: 0.9, interactive: false }).addTo(linesLayer);
-        const pl = L.polyline(ll, { color, weight: sel ? 6 : 3, opacity: has ? (sel ? 1 : 0.14) : 0.55 }).addTo(linesLayer);
-        pl.on("click", (e) => { L.DomEvent.stopPropagation(e); UI.select(r); });
+        L.polyline(ll, { color, weight: sel ? 6 : 3, opacity: has ? (sel ? 1 : 0.14) : 0.55, interactive: false }).addTo(linesLayer);
       });
     }
     if (has) {
@@ -1318,13 +1461,74 @@ const MapView = (() => {
           const t = time[k] + dl, ok = t >= c.boardTime && t <= res.end;
           L.circleMarker([idx.stops.lat[s], idx.stops.lon[s]], {
             radius: s === c.boardStop ? 7 : 4.5, color, weight: 2.5, fillColor: s === c.boardStop || ok ? color : css("--surface"), fillOpacity: 1, opacity: ok || s === c.boardStop ? 1 : 0.5,
-          }).bindTooltip(`<span class="stop-dot-label">${esc(idx.stops.name[s])}${ok ? " · " + Time.clock(idx.dayStart, t) : ""}</span>`, { direction: "top", offset: [0, -6] }).addTo(stopsLayer);
+          }).bindTooltip(`<span class="stop-dot-label">${esc(stopName(idx, s))}${ok ? " · " + Time.clock(idx.dayStart, t) : ""}</span>`, { direction: "top", offset: [0, -6] }).addTo(stopsLayer);
         }
       }
     }
   }
 
-  function drawVehicles(idx, vehicles, res, selected) {
+  /** Percorso completo di una corsa + posizione di ogni sua fermata lungo il percorso (indice in ll). */
+  function tripPath(idx, t) {
+    const { start, stop } = idx.tstops, n = start[t + 1] - start[t], s = idx.trips.shape[t];
+    const ll = shapeLatLngs(idx, s, t), at = new Int32Array(n);
+    if (!(s >= 0 && idx.shapes.start[s + 1] > idx.shapes.start[s])) { for (let i = 0; i < n; i++) at[i] = i; return { ll, at }; }
+    // ogni fermata si aggancia al punto più vicino della forma, procedendo solo in avanti
+    let prev = 0;
+    for (let i = 0; i < n; i++) {
+      const la = idx.stops.lat[stop[start[t] + i]], lo = idx.stops.lon[stop[start[t] + i]];
+      let bi = prev, bd = Infinity;
+      for (let j = prev; j < ll.length; j++) {
+        const d = Core.Geo.dist(la, lo, ll[j][0], ll[j][1]);
+        if (d < bd) { bd = d; bi = j; } else if (bd < 50 && d > bd + 300) break;
+      }
+      at[i] = prev = bi;
+    }
+    return { ll, at };
+  }
+
+  /** Itinerario: percorsi completi dei mezzi attenuati, tratti usati evidenziati, fermate di salita/discesa con nome. */
+  function drawJourney(idx, j, d) {
+    linesLayer.clearLayers(); stopsLayer.clearLayers(); journeyLayer.clearLayers();
+    if (dest) { map.removeLayer(dest); dest = null; }
+    if (!d) return [];
+    dest = L.marker([d.lat, d.lon], { interactive: false, keyboard: false, zIndexOffset: 900, icon: L.divIcon({ className: "", html: '<div class="dest"></div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(map);
+    if (!j) return [[d.lat, d.lon]];
+    const pts = [[d.lat, d.lon]], ink = css("--ink"), surf = css("--surface");
+    const where = (p) => p.stop != null ? [idx.stops.lat[p.stop], idx.stops.lon[p.stop]] : [p.lat, p.lon];
+    const label = (txt, s, up, permanent) => L.circleMarker([idx.stops.lat[s], idx.stops.lon[s]], { radius: 7, color: surf, weight: 3, fillColor: ink, fillOpacity: 1, interactive: !permanent })
+      .bindTooltip(`<span class="stop-dot-label">${txt}</span>`, { permanent, direction: up ? "top" : "bottom", offset: [0, up ? -8 : 8], className: "j-tip" }).addTo(stopsLayer);
+    const { start, stop, time } = idx.tstops, rides = j.legs.filter((l) => l.type === "ride");
+    for (const l of j.legs) {
+      if (l.type === "walk") {
+        const a = where(l.from), b = where(l.to); pts.push(a, b);
+        L.polyline([a, b], { color: ink, weight: 4, opacity: 0.75, dashArray: "1 9", lineCap: "round", interactive: false }).addTo(journeyLayer);
+        continue;
+      }
+      const color = routeColor(idx, l.route), p = tripPath(idx, l.trip), k0 = start[l.trip];
+      L.polyline(p.ll, { color, weight: 4, opacity: 0.3, interactive: false }).addTo(journeyLayer);
+      const seg = p.ll.slice(p.at[l.kFrom - k0], p.at[l.kTo - k0] + 1);
+      if (seg.length < 2) for (let k = l.kFrom; k <= l.kTo; k++) seg.push([idx.stops.lat[stop[k]], idx.stops.lon[stop[k]]]);
+      L.polyline(seg, { color: surf, weight: 11, opacity: 0.95, interactive: false }).addTo(journeyLayer);
+      L.polyline(seg, { color, weight: 7, opacity: 1, interactive: false }).addTo(journeyLayer);
+      pts.push(...seg);
+      const dl = l.dep - time[l.kFrom];
+      for (let k = l.kFrom + 1; k < l.kTo; k++) {
+        L.circleMarker([idx.stops.lat[stop[k]], idx.stops.lon[stop[k]]], { radius: 4, color, weight: 2.5, fillColor: surf, fillOpacity: 1 })
+          .bindTooltip(`<span class="stop-dot-label">${esc(stopName(idx, stop[k]))} · ${Time.clock(idx.dayStart, time[k] + dl)}</span>`, { direction: "top", offset: [0, -5] }).addTo(stopsLayer);
+      }
+      // al cambio l'etichetta fissa è solo quella di salita del mezzo successivo, per non sovrapporle
+      const next = rides[rides.indexOf(l) + 1];
+      const transfer = next && Core.Geo.dist(idx.stops.lat[l.to], idx.stops.lon[l.to], idx.stops.lat[next.from], idx.stops.lon[next.from]) < 250;
+      label(`<b>${esc(idx.routes.short[l.route])}</b> sali · ${esc(stopName(idx, l.from))} · ${Time.clock(idx.dayStart, l.dep)}`, l.from, true, true);
+      label(`scendi · ${esc(stopName(idx, l.to))} · ${Time.clock(idx.dayStart, l.arr)}`, l.to, false, !transfer);
+    }
+    return pts;
+  }
+  function fitPoints(pts) {
+    if (pts.length) map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 90], paddingBottomRight: [40, sheetOffsetPx() + 40], maxZoom: 16 });
+  }
+
+  function drawVehicles(idx, vehicles, res, selected, focus) {
     vehLayer.clearLayers();
     if (!idx || !vehicles.length) return;
     const o = state.prefs.origin, near = 2500;
@@ -1332,9 +1536,9 @@ const MapView = (() => {
       if (v.route < 0) continue;
       const isSel = selected >= 0 && v.route === selected;
       const useful = res && res.routes.has(v.route);
-      if (selected >= 0 ? !isSel : !(useful && Core.Geo.dist(o.lat, o.lon, v.lat, v.lon) < near)) continue;
-      const color = routeColor(idx, v.route);
-      const html = `<div class="veh" style="background:${color}">${esc(idx.routes.short[v.route])}${v.bearing != null ? `<span class="dir" style="transform:rotate(${Math.round(v.bearing)}deg)"></span>` : ""}</div>`;
+      if (focus ? !focus.routes.has(v.route) : selected >= 0 ? !isSel : !(useful && Core.Geo.dist(o.lat, o.lon, v.lat, v.lon) < near)) continue;
+      const color = routeColor(idx, v.route), dim = focus && !focus.trips.has(v.trip) ? " dim" : "";
+      const html = `<div class="veh${dim}" style="background:${color}">${esc(idx.routes.short[v.route])}${v.bearing != null ? `<span class="dir" style="transform:rotate(${Math.round(v.bearing)}deg)"></span>` : ""}</div>`;
       L.marker([v.lat, v.lon], { icon: L.divIcon({ className: "", html, iconSize: null, iconAnchor: [14, 10] }), zIndexOffset: 500, keyboard: false })
         .bindTooltip(`${esc(idx.routes.short[v.route])}${v.label ? " · mezzo " + esc(v.label) : ""}${v.ageSec ? " · " + v.ageSec + " s fa" : ""}`)
         .on("click", (e) => { L.DomEvent.stopPropagation(e); UI.select(v.route); })
@@ -1355,12 +1559,27 @@ const MapView = (() => {
     map.setView(map.unproject(p, z), z, { animate: false });
   }
 
-  return { map, iso, pin, drawLines, drawVehicles, fitRoute, routeColor, centerOn, refreshTiles: setTiles };
+  return { map, iso, pin, drawLines, drawJourney, fitPoints, drawVehicles, fitRoute, routeColor, centerOn, refreshTiles: setTiles };
 })();
 
 /* ---------------- UI ---------------- */
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 const fmtMin = (sec) => { const m = Math.max(0, Math.round(sec / 60)); return m === 0 ? "ora" : m + " min"; };
+const fmtDur = (sec) => Math.max(1, Math.round(sec / 60)) + " min";
+const fmtDist = (m) => m < 1000 ? Math.round(m / 10) * 10 + " m" : (m / 1000).toFixed(1).replace(".", ",") + " km";
+/* Nomi GTT tipo "Fermata 1683 - BERTOLA CAP": tolgo il prefisso (resta il codice) e ammorbidisco il maiuscolo. */
+const SMALL_WORDS = new Set(["di", "del", "della", "dello", "dei", "degli", "delle", "da", "dal", "dalla", "e", "in", "a", "al", "alla", "ai", "agli", "alle", "per", "su", "sul", "sulla"]);
+function soften(name) {
+  if (name !== name.toUpperCase() || !/[A-Z]/.test(name)) return name;
+  return name.toLowerCase().split(/(\s+|-|\/|\()/).map((w, i) =>
+    w.length > 1 && /^x{0,3}(ix|iv|v?i{0,3})$/.test(w) || /\d/.test(w) ? w.toUpperCase() : i > 0 && SMALL_WORDS.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)).join("");
+}
+function stopLabel(idx, s) {
+  const raw = (idx.stops.name[s] || "").trim(), m = /^Fermata\s+(\S+)\s*-\s*(.+)$/i.exec(raw);
+  return { name: soften(m ? m[2] : raw), code: m ? m[1] : "" };
+}
+const stopName = (idx, s) => stopLabel(idx, s).name;
+const ICON_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="4" r="2"/><path d="M9 21l2-6 3 3v5M7 12l2-4 4 1 2 4 3 1M11 15l1-6"/></svg>';
 
 const UI = {
   init() {
@@ -1388,6 +1607,7 @@ const UI = {
     $("#btn-locate").addEventListener("click", UI.locate);
     $("#lines").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) UI.select(+b.dataset.route); });
     $("#view-detail").addEventListener("click", (e) => { if (e.target.closest("[data-back]")) UI.select(-1); });
+    $("#view-journey").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) UI.select(+b.dataset.route); else if (e.target.closest("[data-back]")) UI.closeJourney(); });
     $("#banner-x").addEventListener("click", () => ($("#banner").hidden = true));
     $("#status").addEventListener("click", () => Settings.open());
     $("#btn-settings").addEventListener("click", () => Settings.open());
@@ -1407,7 +1627,7 @@ const UI = {
     toast("Cerco la tua posizione…");
     navigator.geolocation.getCurrentPosition(
       (pos) => { UI.setOrigin(pos.coords.latitude, pos.coords.longitude, true); toast("Partenza impostata sulla tua posizione"); },
-      (err) => toast(err.code === 1 ? "Permesso posizione negato: tocca la mappa per scegliere la partenza" : "Posizione non disponibile, tocca la mappa"),
+      (err) => toast(err.code === 1 ? "Permesso posizione negato: tieni premuto sulla mappa per scegliere la partenza" : "Posizione non disponibile: tieni premuto sulla mappa"),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
     );
   },
@@ -1428,9 +1648,8 @@ const UI = {
     state.result = res;
     if (state.selected >= 0 && !res.routes.has(state.selected)) state.selected = -1;
     MapView.iso.setData(Engine.isoPoints(state.idx, res), p.budgetMin * 60, p.maxWalk, walkMps());
-    MapView.drawLines(state.idx, res, state.selected);
-    MapView.drawVehicles(state.idx, state.rt.vehicles, res, state.selected);
-    UI.renderList(); UI.renderDetail(); UI.renderLegend();
+    UI.drawMap();
+    UI.renderList(); UI.renderDetail(); UI.renderJourney(); UI.renderLegend();
     const nR = res.routes.size;
     $("#sum-sub").textContent = nR ? `${nR} ${nR === 1 ? "linea" : "linee"} · ${res.reachedStops} fermate · calcolato in ${Math.round(performance.now() - t0)} ms` : "Nessun mezzo utile: allarga tempo o distanza a piedi";
   },
@@ -1445,9 +1664,9 @@ const UI = {
     $("#lines-title").textContent = items.length ? "Linee utili adesso" : "Linee utili";
     if (!items.length) { ul.innerHTML = `<li class="empty">Nessuna linea raggiungibile con questi filtri. Prova ad aumentare il tempo o la distanza a piedi.</li>`; return; }
     ul.innerHTML = items.map((e) => {
-      const r = e.route, m = idx.routes.mode[r], b = e.best, heads = Object.values(e.byDir).map((c) => idx.trips.head[c.trip]).filter(Boolean);
+      const r = e.route, m = idx.routes.mode[r], b = e.best, heads = Object.values(e.byDir).map((c) => soften(idx.trips.head[c.trip] || "")).filter(Boolean);
       const wait = b.boardTime - res.nowSec;
-      const where = b.round === 1 ? `${esc(idx.stops.name[b.boardStop])} · ${Math.round(b.walk)} m a piedi` : `con ${b.round - 1} ${b.round === 2 ? "cambio" : "cambi"} · da ${esc(idx.stops.name[b.boardStop])}`;
+      const where = b.round === 1 ? `${esc(stopName(idx, b.boardStop))} · ${Math.round(b.walk)} m a piedi` : `con ${b.round - 1} ${b.round === 2 ? "cambio" : "cambi"} · da ${esc(stopName(idx, b.boardStop))}`;
       return `<li><button class="line-item" type="button" data-route="${r}">
         <span class="badge ${MODES[m].key}" style="background:${MapView.routeColor(idx, r)}">${esc(idx.routes.short[r])}</span>
         <span class="li-main"><span class="t">${heads.length ? esc(heads.join(" ⇄ ")) : esc(idx.routes.long[r] || MODES[m].label)}</span><span class="s">${where}</span></span>
@@ -1455,17 +1674,97 @@ const UI = {
       </button></li>`;
     }).join("");
   },
+  show(view) {
+    state.view = view;
+    $("#view-main").hidden = view !== "main"; $("#view-detail").hidden = view !== "detail"; $("#view-journey").hidden = view !== "journey";
+    $("#sheet-body").scrollTop = 0;
+  },
+  /** Mappa secondo la vista: itinerario, oppure linee utili (con l'eventuale linea selezionata). */
+  drawMap() {
+    const idx = state.idx, res = state.result; if (!idx || !res) return;
+    if (state.view === "journey" && state.dest) {
+      state.journey = Engine.journey(idx, res, state.dest.lat, state.dest.lon);
+      const pts = MapView.drawJourney(idx, state.journey, state.dest);
+      const rides = state.journey ? state.journey.legs.filter((l) => l.type === "ride") : [];
+      MapView.drawVehicles(idx, state.rt.vehicles, res, -1, { routes: new Set(rides.map((l) => l.route)), trips: new Set(rides.map((l) => l.trip)) });
+      if (state.journeyFit) { state.journeyFit = false; pts.push([state.prefs.origin.lat, state.prefs.origin.lon]); MapView.fitPoints(pts); }
+    } else {
+      MapView.drawLines(idx, res, state.selected);
+      MapView.drawVehicles(idx, state.rt.vehicles, res, state.selected);
+    }
+  },
   select(r) {
-    state.selected = r;
-    state.view = r >= 0 ? "detail" : "main";
-    $("#view-main").hidden = r >= 0; $("#view-detail").hidden = r < 0;
+    state.selected = r; state.dest = null; state.journey = null;
+    UI.show(r >= 0 ? "detail" : "main");
     if (state.idx && state.result) {
-      MapView.drawLines(state.idx, state.result, r);
-      MapView.drawVehicles(state.idx, state.rt.vehicles, state.result, r);
+      UI.drawMap();
       if (r >= 0) { MapView.fitRoute(state.idx, r); if (Sheet.state === "max") Sheet.set("mid"); }
     }
-    UI.renderDetail();
-    $("#sheet-body").scrollTop = 0;
+    UI.renderDetail(); UI.renderJourney();
+  },
+  /** Tocco sulla mappa: se il punto è raggiungibile mostra come arrivarci. */
+  tapPoint(lat, lon) {
+    if (!state.idx || !state.result) return;
+    if (!Engine.journey(state.idx, state.result, lat, lon)) { toast(`Fuori dall'area raggiungibile in ${state.prefs.budgetMin} min`); return; }
+    state.dest = { lat, lon }; state.selected = -1; state.journeyFit = true;
+    UI.show("journey");
+    if (Sheet.state === "min") Sheet.set("mid");
+    UI.drawMap(); UI.renderJourney(); UI.renderDetail();
+  },
+  closeJourney() { state.dest = null; state.journey = null; UI.show("main"); UI.drawMap(); UI.renderJourney(); },
+  renderJourney() {
+    const box = $("#view-journey"), idx = state.idx, res = state.result, j = state.journey;
+    if (state.view !== "journey" || !idx || !res || !state.dest) { box.innerHTML = ""; return; }
+    const clock = (s) => Time.clock(idx.dayStart, s);
+    const head = `<div class="detail-head"><button class="back" type="button" data-back>← Linee</button><h3>Come arrivarci</h3></div>`;
+    if (!j) {
+      box.innerHTML = head + `<div class="board-card"><span class="big">Non più raggiungibile</span><span class="meta">Con i filtri attuali questo punto non si raggiunge entro ${state.prefs.budgetMin} min. Aumenta il tempo o la distanza a piedi, oppure tocca un altro punto.</span></div>`;
+      return;
+    }
+    const rides = j.legs.filter((l) => l.type === "ride");
+    const badge = (r) => `<button type="button" class="badge ${MODES[idx.routes.mode[r]].key}" data-route="${r}" aria-label="Linea ${esc(idx.routes.short[r])}: mostra il percorso" style="background:${MapView.routeColor(idx, r)}">${esc(idx.routes.short[r])}</button>`;
+    const stopTxt = (s) => { const L = stopLabel(idx, s); return `<b>${esc(L.name)}</b>${L.code ? ` <span class="code">${esc(L.code)}</span>` : ""}`; };
+    const leaveIn = j.leave - res.nowSec;
+    let html = head + `<div class="board-card">
+      <span class="big">Arrivi alle ${clock(j.arrive)} · ${fmtDur(j.arrive - res.nowSec)}</span>
+      <span class="meta">${rides.length ? `Esci entro le ${clock(j.leave)}${leaveIn >= 60 ? ` (tra ${fmtDur(leaveIn)})` : ""} · ${rides.length === 1 ? "1 mezzo, nessun cambio" : `${rides.length} mezzi, ${rides.length - 1} ${rides.length === 2 ? "cambio" : "cambi"}`}` : "Ci arrivi a piedi"} · ${fmtDist(j.walk)} a piedi</span>
+      ${rides.length ? `<span class="j-chain">${rides.map((l) => badge(l.route)).join('<span class="j-arrow" aria-hidden="true">›</span>')}</span>` : ""}
+    </div><ol class="itin">`;
+    const { stop, time } = idx.tstops;
+    let t = rides.length ? j.leave : res.nowSec;
+    j.legs.forEach((l, i) => {
+      if (l.type === "walk") {
+        const dur = l.arr - l.dep, dep = i === 0 ? t : l.dep;
+        const what = i > 0 && l.to.stop != null ? "Cambio a piedi" : "Cammina";
+        html += `<li class="it it-walk"><span class="it-ic">${ICON_WALK}</span><div class="it-body"><div><b>${what} ${fmtDist(l.dist)}</b> · ${fmtDur(dur)}</div><div class="it-sub">${l.to.stop != null ? "fino a " + stopTxt(l.to.stop) : "fino al punto scelto"}</div></div><time>${clock(dep)}</time></li>`;
+        t = dep + dur;
+        return;
+      }
+      const wait = l.dep - t;
+      if (wait >= 60) html += `<li class="it it-wait"><span class="it-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span><div class="it-body">Attesa ${fmtDur(wait)}</div></li>`;
+      const color = MapView.routeColor(idx, l.route), m = idx.routes.mode[l.route];
+      const next = Engine.nextDepartures(idx, l.route, idx.trips.dir[l.trip], l.from, l.dep, 2, state.rt.delays);
+      const veh = state.rt.vehicles.find((v) => v.trip === l.trip);
+      const dl = l.dep - time[l.kFrom];
+      let rows = "";
+      for (let k = l.kFrom + 1; k < l.kTo; k++) rows += `<li><span class="node"></span><span>${esc(stopName(idx, stop[k]))}</span><time>${clock(time[k] + dl)}</time></li>`;
+      const nStops = l.kTo - l.kFrom;
+      html += `<li class="it it-ride" style="--line-c:${color}"><span class="it-ic">${badge(l.route)}</span><div class="it-body">
+        <div class="it-sub">${MODES[m].label} verso <b>${esc(soften(idx.trips.head[l.trip] || "") || idx.routes.long[l.route] || "capolinea")}</b></div>
+        <div class="it-stop"><span>Sali a ${stopTxt(l.from)}</span><time>${clock(l.dep)}</time></div>
+        <div class="it-meta">${l.dep - res.nowSec >= 60 ? `passa tra ${fmtDur(l.dep - res.nowSec)}` : "passa ora"}${l.live ? '<span class="live-tag">live</span>' : " · orario programmato"}${next.length ? ` · poi alle ${next.map((x) => clock(x.dep)).join(", ")}` : ""}</div>
+        ${veh ? `<div class="it-meta">Mezzo ${esc(veh.label || "")} visibile sulla mappa${veh.ageSec ? ` · posizione di ${veh.ageSec} s fa` : ""}</div>` : ""}
+        ${rows ? `<details class="it-more"><summary>${nStops} fermate · ${fmtDur(l.arr - l.dep)}</summary><ul class="stops" style="--line-c:${color}"><span class="rail"></span>${rows}</ul></details>` : `<div class="it-meta">${nStops} ${nStops === 1 ? "fermata" : "fermate"} · ${fmtDur(l.arr - l.dep)}</div>`}
+        <div class="it-stop"><span>Scendi a ${stopTxt(l.to)}</span><time>${clock(l.arr)}</time></div>
+      </div></li>`;
+      t = l.arr;
+    });
+    html += `<li class="it it-end"><span class="it-ic"><span class="dest"></span></span><div class="it-body"><b>Arrivo</b></div><time>${clock(j.arrive)}</time></li></ol>`;
+    const used = new Set(rides.map((l) => l.route));
+    html += state.rt.alerts.filter((a) => [...a.routes].some((r) => used.has(r))).slice(0, 3)
+      .map((a) => `<div class="alert-box"><strong>${esc(a.header)}</strong>${a.description ? "<br>" + esc(a.description.slice(0, 280)) : ""}</div>`).join("");
+    html += `<p class="hint">Tratti a piedi calcolati in linea d'aria. Tocca un altro punto per cambiare destinazione.</p>`;
+    box.innerHTML = html;
   },
   renderDetail() {
     const box = $("#view-detail"), r = state.selected, idx = state.idx, res = state.result;
@@ -1482,9 +1781,9 @@ const UI = {
         if (s === c.boardStop) started = true;
         if (!started) continue;
         const inside = t <= res.end;
-        rows += `<li class="${s === c.boardStop ? "board" : ""} ${inside ? "" : "out"}"><span class="node"></span><span>${esc(idx.stops.name[s])}</span><time>${Time.clock(idx.dayStart, t)}</time></li>`;
+        rows += `<li class="${s === c.boardStop ? "board" : ""} ${inside ? "" : "out"}"><span class="node"></span><span>${esc(stopName(idx, s))}</span><time>${Time.clock(idx.dayStart, t)}</time></li>`;
       }
-      return `<div class="section-title">Verso ${esc(idx.trips.head[c.trip] || "capolinea")}</div><ul class="stops" style="--line-c:${color}"><span class="rail"></span>${rows}</ul>`;
+      return `<div class="section-title">Verso ${esc(soften(idx.trips.head[c.trip] || "") || "capolinea")}</div><ul class="stops" style="--line-c:${color}"><span class="rail"></span>${rows}</ul>`;
     }).join("");
     const wait = b.boardTime - res.nowSec;
     box.innerHTML = `
@@ -1494,8 +1793,8 @@ const UI = {
         <h3>${esc(idx.routes.long[r] || MODES[m].label)}</h3>
       </div>
       <div class="board-card">
-        <span class="big">${b.round === 1 ? `Sali a ${esc(idx.stops.name[b.boardStop])}` : `Raggiungibile con ${b.round - 1} ${b.round === 2 ? "cambio" : "cambi"}`}</span>
-        <span class="meta">${b.round === 1 ? `${Math.round(b.walk)} m a piedi · passa alle ${Time.clock(idx.dayStart, b.boardTime)} (${fmtMin(wait)})` : `Sali a ${esc(idx.stops.name[b.boardStop])} alle ${Time.clock(idx.dayStart, b.boardTime)}`}${e.live ? " · orario aggiornato in tempo reale" : " · orario programmato"}</span>
+        <span class="big">${b.round === 1 ? `Sali a ${esc(stopName(idx, b.boardStop))}` : `Raggiungibile con ${b.round - 1} ${b.round === 2 ? "cambio" : "cambi"}`}</span>
+        <span class="meta">${b.round === 1 ? `${Math.round(b.walk)} m a piedi · passa alle ${Time.clock(idx.dayStart, b.boardTime)} (${fmtMin(wait)})` : `Sali a ${esc(stopName(idx, b.boardStop))} alle ${Time.clock(idx.dayStart, b.boardTime)}`}${e.live ? " · orario aggiornato in tempo reale" : " · orario programmato"}</span>
         <span class="meta">${vehicles ? `${vehicles} ${vehicles === 1 ? "mezzo" : "mezzi"} in linea visibili sulla mappa` : "Nessuna posizione live per questa linea"}</span>
       </div>
       ${alerts.map((a) => `<div class="alert-box"><strong>${esc(a.header)}</strong>${a.description ? "<br>" + esc(a.description.slice(0, 280)) : ""}</div>`).join("")}
