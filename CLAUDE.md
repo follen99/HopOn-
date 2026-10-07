@@ -11,7 +11,12 @@ Storia, requisiti completi, domande aperte e idee di feature: **[HANDOFF.md](HAN
 
 ## Struttura
 
-Tutto il prototipo è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). È diviso in blocchi che diventeranno moduli:
+L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto:
+- [tools/build-walk-tiles.mjs](tools/build-walk-tiles.mjs): Node senza dipendenze, legge un `.osm.pbf` (decoder PBF interno, due passaggi: relazioni poi nodi/vie) e il GTFS GTT, scrive le tessere della rete pedonale in `walk/` (gitignored).
+- [.github/workflows/pages.yml](.github/workflows/pages.yml): pubblica su GitHub Pages (`hop-on.html` → `index.html` + `walk/` generata da Geofabrik nord-ovest); istruzioni per l'utente in [README.md](README.md).
+- `.claude/launch.json`: server locale `python -m http.server 8080` (nome `hopon`).
+
+`hop-on.html` è diviso in blocchi che diventeranno moduli:
 
 | Blocco | Contenuto |
 |---|---|
@@ -22,13 +27,17 @@ Tutto il prototipo è in **[hop-on.html](hop-on.html)** (un solo file, nessun bu
 | `script#core` | logica pura **senza DOM**, esposta come `Core` e via `module.exports` |
 | `script#app` | tutto ciò che usa il browser (IIFE) |
 
-`Core` contiene: `Config`, `MODES`/`modeFromRouteType`, `Geo`, `Time`, `Csv`, `GtfsRt` (decoder protobuf scritto a mano), `GtfsStatic` + `finalizeIndex` (zip GTFS → indice a array tipizzati), `Demo`, `Realtime`, `Engine` (isocrona con Connection Scan Algorithm a round).
+`Core` contiene: `Config`, `MODES`/`modeFromRouteType`, `Geo`, `Time`, `Csv`, `GtfsRt` (decoder protobuf scritto a mano), `GtfsStatic` + `finalizeIndex` (zip GTFS → indice a array tipizzati), `Demo`, `Realtime`, `Walk` (rete pedonale), `Engine` (isocrona con Connection Scan Algorithm a round).
+
+**Percorsi a piedi (`Walk`):** tessere ~2,8 × 2,8 km (`tileLat` 0,025°, `tileLon` 0,035°, letti da `walk/index.json`), formato `HOW1` gzip descritto in testa a `Walk` e in `writeTile`. `Walk.build` unisce le tessere (nodi di confine per coordinate) in un grafo CSR; i pezzi di rete con meno di 200 nodi sono "non principali" e l'aggancio li evita. `Walk.attach` aggancia le fermate. Un punto parte da tutti i nodi entro (distanza dal più vicino + 40 m) (`Walk.cands`), così piazze e cortili non allungano i percorsi. Dove la rete manca la distanza è stimata: linea d'aria × `Walk.DETOUR` (1,3), e il tratto è marcato `estimated`. `Walk.field` (Dijkstra multi-sorgente in tempo, max `maxWalk` per tratto) dà il tempo di arrivo per nodo: il layer isocrona disegna le strade colorate; i punti fuori rete restano cerchi.
 
 `Engine.isochrone` salva per ogni round e fermata il "genitore" (corsa + fermata di salita, oppure fermata da cui si arriva a piedi); `Engine.journey` lo usa per ricostruire l'itinerario verso un punto qualsiasi, `Engine.nextDepartures` dà i passaggi successivi a una fermata.
 
 **Interazioni sulla mappa:** tocco breve = "Come arrivarci" (vista `journey` nel pannello; fuori dall'area → messaggio breve); pressione prolungata ≥ 550 ms o clic destro = sposta la partenza; il PIN resta trascinabile. Le linee disegnate non sono toccabili (coprirebbero l'area): una linea si seleziona dalla lista, da un mezzo live o da un badge nell'itinerario.
 
-`app` contiene: `Prefs` (localStorage `hopon.prefs.v1`), `Cache` (IndexedDB `hopon`/`kv`), `Net`, `MapView` (Leaflet + layer isocrona su canvas), `UI`, `Sheet`, `Settings`, `Data`, `Boot`.
+`app` contiene: `Prefs` (localStorage `hopon.prefs.v1`), `Cache` (IndexedDB `hopon`/`kv`), `Net`, `MapView` (Leaflet + layer isocrona su canvas), `UI`, `WalkAreas`, `Sheet`, `Settings`, `Data`, `Boot`.
+
+**Aree pedonali (`WalkAreas`):** un'area è un cerchio (centro, raggio 3/6/10 km) con le sue tessere; IndexedDB `walk:areas`, `walk:stored`, `walk:index`, `walk:t:<tx>_<ty>`. Download automatico (`ensure`) all'avvio, dopo il GPS e quando la partenza esce dalle aree; gestione manuale in Impostazioni → Percorsi a piedi. Sorgente: `walk/` dello stesso sito (http/https) oppure `prefs.walkBase`; da `file://` niente rete pedonale → stima.
 
 ## Regole del codice
 
@@ -54,7 +63,7 @@ Non ci sono ancora file di test. `Core` si carica in Node estraendo lo script:
 node -e 'const fs=require("fs"),vm=require("vm");const src=fs.readFileSync("hop-on.html","utf8").match(/<script id="core">([\s\S]*?)<\/script>/)[1];const m={exports:{}};vm.runInNewContext(src,{module:m,console,TextDecoder,Date,Math});console.log(Object.keys(m.exports))'
 ```
 
-Per l'interfaccia: aprire `hop-on.html` nel browser (il pannello browser integrato va bene) e controllare la console.
+Per l'interfaccia con i percorsi a piedi serve http: generare `walk/` (es. da BBBike Torino, 24 MB: `node tools/build-walk-tiles.mjs --pbf Turin.osm.pbf --out walk`), avviare il server `hopon` di `.claude/launch.json` e aprire `http://localhost:8080/hop-on.html`. Aperta come file, l'app funziona ma con i tratti a piedi stimati.
 
 ## Stato
 
@@ -66,5 +75,6 @@ Per l'interfaccia: aprire `hop-on.html` nel browser (il pannello browser integra
   - Posizioni mezzi: tutte con `bearing` e `timestamp`, età tipica ~2 min; ~83% con `trip_id`, tutti con `route_id`, tutti presenti nello zip.
   - trip_update: nessun `delay` a livello corsa; per fermata mix di `delay` e `time`, solo `stop_sequence` (mai `stop_id`). Tutti i `trip_id` presenti nello zip.
   - Avvisi: ~150, quasi tutti collegati a linee; quelli con solo `agency_id` (es. "Linee 13 e 15 deviate") non vengono associati alle linee.
-- Non ancora verificati: app completa nel browser con dati reali, OpenFreeMap reale, prestazioni sul telefono.
+- Rete pedonale (7 ottobre 2026): estratto BBBike Torino → 175 tessere, 3,8 MB; area di 6 km attorno a piazza Castello ≈ 1,3 MB, ~160.000 nodi, costruzione grafo ~0,4 s + aggancio fermate ~0,5 s su PC; isocrona con strade ~10 ms, area colorata ~30 ms. Tratti a piedi tipicamente 1,2–1,4 × la linea d'aria.
+- Verificati nel browser (localhost) con dati reali: itinerari, cambi, pressione prolungata, aree a piedi (download, eliminazione, persistenza). Non verificati: prestazioni sul telefono, workflow GitHub Pages (il repository non ha ancora un remote).
 - Prossimi passi (HANDOFF.md §8): GitHub Pages → prova dell'app sul telefono → `GtfsStatic.build` in un Web Worker → migrazione a progetto Vite (`src/core`, `src/app`, `worker/proxy.js`, `test/`) → domande aperte e modalità radar.

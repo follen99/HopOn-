@@ -14,9 +14,13 @@
     script#proxy-worker-src       codice del proxy CORS (Cloudflare Worker) da copiare
     script#core                   logica pura, senza DOM (testabile in Node):
                                     Config, Geo, Csv, GtfsRt (decoder protobuf), GtfsStatic (indice),
-                                    Demo (rete finta), Engine (isocrona con Connection Scan Algorithm)
+                                    Demo (rete finta), Walk (rete pedonale da tessere OSM),
+                                    Engine (isocrona con Connection Scan Algorithm, itinerari)
     script#app                    browser: Cache (IndexedDB), Net (fetch via proxy), Realtime,
-                                    MapView (Leaflet + layer isocrona), UI, Boot
+                                    MapView (Leaflet + layer isocrona), UI, WalkAreas (aree a piedi), Boot
+
+  PERCORSI A PIEDI: tessere in walk/ generate da tools/build-walk-tiles.mjs (© OpenStreetMap, ODbL),
+  pubblicate con l'app da .github/workflows/pages.yml (GitHub Pages).
 
   DATI (licenza CC-BY 4.0, fonte GTT / Comune di Torino - aperTO):
     GTFS statico   https://www.gtt.to.it/open_data/gtt_gtfs.zip
@@ -252,6 +256,13 @@ button.badge { border: 0; }
 .stops .rail { position: absolute; left: 8px; top: 12px; bottom: 12px; width: 2px; background: var(--hairline); }
 .stops time { font: 500 13px/1 var(--f-mono); font-variant-numeric: tabular-nums; }
 .hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.set-h { margin: 22px 0 2px; font: 700 17px/1.2 var(--f-display); }
+.areas { list-style: none; margin: 8px 0 0; padding: 0; }
+.areas li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
+.areas li span { min-width: 0; display: grid; }
+.areas small { color: var(--muted); font-size: 12px; }
+.areas .btn { padding: 6px 12px; font-size: 13px; }
+select.btn { appearance: auto; }
 
 /* itinerario ("Come arrivarci") */
 .j-chain { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
@@ -413,6 +424,25 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
         <option value="5.4">Svelto · 5,4 km/h</option>
       </select>
     </label>
+
+    <h3 class="set-h">Percorsi a piedi</h3>
+    <p>Per calcolare i tratti a piedi lungo le strade, Hop on! scarica la rete pedonale della zona (dati OpenStreetMap). Succede da solo all'avvio, quando usi la tua posizione o quando sposti la partenza fuori dalle aree già scaricate.</p>
+    <p id="walk-status" class="mono"></p>
+    <ul class="areas" id="walk-areas"></ul>
+    <div class="row">
+      <select id="in-walk-radius" class="btn" aria-label="Raggio dell'area">
+        <option value="3">Raggio 3 km</option><option value="6">Raggio 6 km</option><option value="10">Raggio 10 km</option>
+      </select>
+      <button class="btn" id="btn-walk-add" type="button">Scarica attorno alla partenza</button>
+      <button class="btn" id="btn-walk-refresh" type="button" hidden>Aggiorna le aree</button>
+    </div>
+    <details>
+      <summary>Sorgente dei dati a piedi (avanzato)</summary>
+      <label class="field"><span>Indirizzo della cartella <span class="mono">walk/</span></span>
+        <input type="url" id="in-walk-base" placeholder="Vuoto = stesso sito dell'app" inputmode="url" autocomplete="off">
+      </label>
+      <p>Serve solo se apri l'app da un file locale: indica la cartella <span class="mono">walk/</span> del sito pubblicato (es. https://tuonome.github.io/hop-on/walk/).</p>
+    </details>
 
     <label class="field"><span>Chiave mappe CARTO (facoltativa)</span>
       <input type="text" id="in-carto" placeholder="Vuoto = mappa OpenFreeMap" autocomplete="off" spellcheck="false">
@@ -1054,6 +1084,219 @@ const Realtime = {
 /* ---------------- Motore isocrona: Connection Scan Algorithm ----------------
    Scansiona le connessioni (tratta fermata→fermata di una corsa) in ordine di partenza.
    Etichette per "numero di corse prese" (round) per limitare i cambi. */
+/* ---------------- Rete pedonale: grafo delle strade da tessere OSM ----------------
+   Tessera (dopo gunzip): "HOW1" · uint32 n · uint32 m · int32[n] lat µ° (delta) · int32[n] lon µ° (delta) · uint32[m] a · uint32[m] b
+   Il contesto W = Walk.attach(grafo, idx) aggancia le fermate ai nodi. Dove la rete manca (W null, punto o fermata
+   troppo lontani da una strada) le distanze sono stimate: linea d'aria × DETOUR, e i tratti sono marcati "estimated". */
+const Walk = {
+  DETOUR: 1.3,
+  SNAP_MAX: 150,               // m: oltre questa distanza un punto non si aggancia alla rete
+  decodeTile(bytes) {
+    const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (v.getUint32(0, true) !== 0x31574f48) throw new Error("Tessera non valida");
+    const n = v.getUint32(4, true), m = v.getUint32(8, true), lat = new Int32Array(n), lon = new Int32Array(n), a = new Uint32Array(m), b = new Uint32Array(m);
+    let o = 12, x = 0;
+    for (let i = 0; i < n; i++, o += 4) lat[i] = x += v.getInt32(o, true);
+    x = 0; for (let i = 0; i < n; i++, o += 4) lon[i] = x += v.getInt32(o, true);
+    for (let i = 0; i < m; i++, o += 4) a[i] = v.getUint32(o, true);
+    for (let i = 0; i < m; i++, o += 4) b[i] = v.getUint32(o, true);
+    return { lat, lon, a, b };
+  },
+  /** Unisce le tessere (nodi di confine riconosciuti dalle coordinate) in un grafo non orientato in formato CSR. */
+  build(tiles) {
+    const key = new Map(), lat = [], lon = [], ea = [], eb = [], seen = new Set();
+    for (const t of tiles) {
+      const map = new Int32Array(t.lat.length);
+      for (let i = 0; i < t.lat.length; i++) {
+        const k = t.lat[i] * 1e7 + t.lon[i]; let g = key.get(k);
+        if (g === undefined) { g = lat.length; key.set(k, g); lat.push(t.lat[i] / 1e6); lon.push(t.lon[i] / 1e6); }
+        map[i] = g;
+      }
+      for (let j = 0; j < t.a.length; j++) {
+        let x = map[t.a[j]], y = map[t.b[j]]; if (x === y) continue; if (x > y) { const z = x; x = y; y = z; }
+        const ek = x * 134217728 + y; if (seen.has(ek)) continue; seen.add(ek); ea.push(x); eb.push(y);
+      }
+    }
+    const n = lat.length, m = ea.length, deg = new Int32Array(n + 1);
+    for (let j = 0; j < m; j++) { deg[ea[j]]++; deg[eb[j]]++; }
+    const start = new Int32Array(n + 1); for (let i = 0; i < n; i++) start[i + 1] = start[i] + deg[i];
+    const fill = start.slice(0, n), to = new Int32Array(2 * m), len = new Float32Array(2 * m);
+    const LA = Float64Array.from(lat), LO = Float64Array.from(lon);
+    for (let j = 0; j < m; j++) {
+      const x = ea[j], y = eb[j], d = Geo.dist(LA[x], LO[x], LA[y], LO[y]);
+      to[fill[x]] = y; len[fill[x]++] = d; to[fill[y]] = x; len[fill[y]++] = d;
+    }
+    // pezzi di rete isolati (cortili, frammenti al bordo delle tessere): l'aggancio li usa solo se non c'è altro
+    const main = new Uint8Array(n), comp = new Int32Array(n).fill(-1), stack = [];
+    for (let i = 0; i < n; i++) {
+      if (comp[i] >= 0) continue;
+      const members = [i]; comp[i] = i; stack.push(i);
+      while (stack.length) { const u = stack.pop(); for (let e = start[u]; e < start[u + 1]; e++) { const v = to[e]; if (comp[v] < 0) { comp[v] = i; members.push(v); stack.push(v); } } }
+      if (members.length >= 200) for (const u of members) main[u] = 1;
+    }
+    let la0 = Infinity, la1 = -Infinity, lo0 = Infinity, lo1 = -Infinity;
+    for (let i = 0; i < n; i++) { if (LA[i] < la0) la0 = LA[i]; if (LA[i] > la1) la1 = LA[i]; if (LO[i] < lo0) lo0 = LO[i]; if (LO[i] > lo1) lo1 = LO[i]; }
+    const g = { n, m, lat: LA, lon: LO, start, to, len, main, bbox: [la0, lo0, la1, lo1], grid: Geo.makeGrid(LA, LO, 0.0015) };
+    g.ws = { dist: new Float64Array(n), walked: new Float64Array(n), prev: new Int32Array(n), stamp: new Uint32Array(n), cur: 0, hk: new Float64Array(1024), hv: new Int32Array(1024) };
+    return g;
+  },
+  /** Nodo della rete più vicino entro SNAP_MAX (preferendo la rete principale ai pezzi isolati), oppure null. */
+  snap(g, lat, lon) {
+    const c = g.grid.near(lat, lon, Walk.SNAP_MAX); let bn = -1, bd = Infinity, sn = -1, sd = Infinity;
+    for (let i = 0; i < c.length; i += 2) {
+      if (g.main[c[i]]) { if (c[i + 1] < bd) { bd = c[i + 1]; bn = c[i]; } }
+      else if (c[i + 1] < sd) { sd = c[i + 1]; sn = c[i]; }
+    }
+    return bn >= 0 ? { node: bn, d: bd } : sn >= 0 ? { node: sn, d: sd } : null;
+  },
+  /** Nodi vicini a un punto da cui si può partire camminando "liberamente" (piazze, cortili): coppie [nodo, metri]. */
+  cands(g, lat, lon) {
+    const p = Walk.snap(g, lat, lon); if (!p) return null;
+    const main = !!g.main[p.node], r = Math.min(Walk.SNAP_MAX, p.d + 40), c = g.grid.near(lat, lon, r), out = [];
+    for (let i = 0; i < c.length; i += 2) if (!main || g.main[c[i]]) out.push([c[i], c[i + 1]]);
+    return out.length > 48 ? out.sort((x, y) => x[1] - y[1]).slice(0, 48) : out;
+  },
+  /** Aggancia le fermate dell'indice orari al grafo. */
+  attach(g, idx) {
+    const nS = idx.stops.id.length, stopNode = new Int32Array(nS).fill(-1), stopSnap = new Float32Array(nS), nodeStops = new Map();
+    const [la0, lo0, la1, lo1] = g.bbox;
+    for (let s = 0; s < nS; s++) {
+      const la = idx.stops.lat[s], lo = idx.stops.lon[s];
+      if (la < la0 - 0.002 || la > la1 + 0.002 || lo < lo0 - 0.002 || lo > lo1 + 0.002) continue;
+      const p = Walk.snap(g, la, lo); if (!p) continue;
+      stopNode[s] = p.node; stopSnap[s] = p.d;
+      const a = nodeStops.get(p.node); if (a) a.push(s); else nodeStops.set(p.node, [s]);
+    }
+    return { g, idx, stopNode, stopSnap, nodeStops, nb: new Map() };
+  },
+  /** Dijkstra limitato a maxDist, con area di lavoro riusata (i risultati vanno letti subito). Restituisce i nodi raggiunti. */
+  _search(g, sources, maxDist, target = -1) {
+    const ws = g.ws, { dist, prev, stamp } = ws; const cur = ++ws.cur; let hn = 0;
+    const push = (k, v) => {
+      if (hn === ws.hk.length) { const a = new Float64Array(hn * 2); a.set(ws.hk); ws.hk = a; const b = new Int32Array(hn * 2); b.set(ws.hv); ws.hv = b; }
+      const hk = ws.hk, hv = ws.hv; let i = hn++;
+      while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; }
+      hk[i] = k; hv[i] = v;
+    };
+    const pop = () => {
+      const hk = ws.hk, hv = ws.hv, v = hv[0], k = hk[--hn], x = hv[hn]; let i = 0;
+      for (;;) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hk[c + 1] < hk[c]) c++; if (hk[c] >= k) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; }
+      hk[i] = k; hv[i] = x; return v;
+    };
+    for (const [node, d0] of sources) {
+      if (d0 > maxDist) continue;
+      if (stamp[node] !== cur || d0 < dist[node]) { stamp[node] = cur; dist[node] = d0; prev[node] = -1; push(d0, node); }
+    }
+    const settled = [];
+    while (hn > 0) {
+      const d = ws.hk[0], u = pop();
+      if (d > dist[u]) continue;
+      settled.push(u); if (u === target) break;
+      for (let e = g.start[u]; e < g.start[u + 1]; e++) {
+        const v = g.to[e], nd = d + g.len[e]; if (nd > maxDist) continue;
+        if (stamp[v] !== cur || nd < dist[v]) { stamp[v] = cur; dist[v] = nd; prev[v] = u; push(nd, v); }
+      }
+    }
+    return settled;
+  },
+  _straight(idx, lat, lon, maxDist, keep) {
+    const near = Engine.grid(idx).near(lat, lon, maxDist / Walk.DETOUR), out = [];
+    for (let i = 0; i < near.length; i += 2) if (!keep || keep(near[i])) out.push(near[i], near[i + 1] * Walk.DETOUR);
+    return out;
+  },
+  _collect(W, settled, maxDist, out) {
+    const dist = W.g.ws.dist;
+    for (const u of settled) {
+      const ss = W.nodeStops.get(u); if (!ss) continue;
+      for (const s of ss) { const d = dist[u] + W.stopSnap[s]; if (d <= maxDist) out.push(s, d); }
+    }
+    return out;
+  },
+  /** Fermate raggiungibili a piedi da un punto: coppie piatte [fermata, metri, ...]. */
+  stopsFrom(W, idx, lat, lon, maxDist) {
+    const c = W && Walk.cands(W.g, lat, lon);
+    if (!c) return Walk._straight(idx, lat, lon, maxDist);
+    const out = Walk._collect(W, Walk._search(W.g, c, maxDist), maxDist, []);
+    // fermate fuori dalla rete: stima
+    const off = Walk._straight(idx, lat, lon, maxDist, (s) => W.stopNode[s] < 0);
+    for (let i = 0; i < off.length; i++) out.push(off[i]);
+    return out;
+  },
+  /** Fermate raggiungibili a piedi da una fermata (per i cambi); in cache per distanza massima. */
+  stopsFromStop(W, idx, s, maxDist) {
+    if (!W || W.stopNode[s] < 0) return Walk._straight(idx, idx.stops.lat[s], idx.stops.lon[s], maxDist);
+    let c = W.nb.get(maxDist); if (!c) W.nb.set(maxDist, c = new Map());
+    let a = c.get(s);
+    if (!a) {
+      a = Walk._collect(W, Walk._search(W.g, [[W.stopNode[s], W.stopSnap[s]]], maxDist), maxDist, []);
+      const off = Walk._straight(idx, idx.stops.lat[s], idx.stops.lon[s], maxDist, (x) => W.stopNode[x] < 0);
+      for (let i = 0; i < off.length; i++) a.push(off[i]);
+      c.set(s, a);
+    }
+    return a;
+  },
+  /** Estremo di un tratto: coordinate e nodi di partenza possibili (vuoto se fuori rete). */
+  _end(W, idx, p) {
+    if (p.stop != null) return { lat: idx.stops.lat[p.stop], lon: idx.stops.lon[p.stop], c: W && W.stopNode[p.stop] >= 0 ? [[W.stopNode[p.stop], W.stopSnap[p.stop]]] : [] };
+    return { lat: p.lat, lon: p.lon, c: (W && Walk.cands(W.g, p.lat, p.lon)) || [] };
+  },
+  /** Percorso a piedi tra due estremi ({stop} oppure {lat, lon}): { pts: [[lat, lon]...], dist, estimated }, null se oltre maxDist sulla rete. */
+  path(W, idx, a, b, maxDist = 5000) {
+    const A = Walk._end(W, idx, a), B = Walk._end(W, idx, b);
+    const straight = () => ({ pts: [[A.lat, A.lon], [B.lat, B.lon]], dist: Geo.dist(A.lat, A.lon, B.lat, B.lon) * Walk.DETOUR, estimated: true });
+    if (!W || !A.c.length || !B.c.length) return straight();
+    const g = W.g, ws = g.ws;
+    Walk._search(g, A.c, maxDist, B.c.length === 1 ? B.c[0][0] : -1);
+    let bn = -1, bd = Infinity;
+    for (const [n, d] of B.c) if (ws.stamp[n] === ws.cur && ws.dist[n] + d < bd) { bd = ws.dist[n] + d; bn = n; }
+    if (bn < 0 || bd > maxDist) return null;                // non raggiungibile entro maxDist
+    const nodes = []; for (let u = bn; u >= 0; u = ws.prev[u]) nodes.push(u);
+    nodes.reverse();
+    return { pts: [[A.lat, A.lon], ...nodes.map((u) => [g.lat[u], g.lon[u]]), [B.lat, B.lon]], dist: bd, estimated: false };
+  },
+  /**
+   * Area raggiungibile lungo le strade: Dijkstra multi-sorgente in tempo, dall'origine e da ogni fermata raggiunta,
+   * con al massimo maxWalk metri a piedi per tratto. Restituisce { t: tempo di arrivo per nodo, nodes, off }
+   * dove off sono i punti fuori rete (da disegnare come cerchi stimati).
+   */
+  field(W, idx, res) {
+    const o = res.opts, mps = o.walkMps, cap = o.maxWalk, end = res.end, off = [];
+    const O = Walk._end(W, idx, { lat: o.lat, lon: o.lon });
+    if (!O.c.length) off.push({ lat: o.lat, lon: o.lon, elapsed: 0 });
+    const g = W.g, ws = g.ws, t = new Float32Array(g.n).fill(Infinity), nodes = [];
+    const { dist: T, walked, stamp } = ws; const cur = ++ws.cur; let hn = 0;
+    const push = (k, v) => {
+      if (hn === ws.hk.length) { const a = new Float64Array(hn * 2); a.set(ws.hk); ws.hk = a; const b = new Int32Array(hn * 2); b.set(ws.hv); ws.hv = b; }
+      const hk = ws.hk, hv = ws.hv; let i = hn++;
+      while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; }
+      hk[i] = k; hv[i] = v;
+    };
+    const pop = () => {
+      const hk = ws.hk, hv = ws.hv, v = hv[0], k = hk[--hn], x = hv[hn]; let i = 0;
+      for (;;) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hk[c + 1] < hk[c]) c++; if (hk[c] >= k) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; }
+      hk[i] = k; hv[i] = x; return v;
+    };
+    const src = (node, t0, w0) => { if (w0 > cap || t0 > end) return; if (stamp[node] !== cur || t0 < T[node]) { stamp[node] = cur; T[node] = t0; walked[node] = w0; push(t0, node); } };
+    for (const [n, d] of O.c) src(n, res.nowSec + d / mps, d);
+    for (let s = 0; s < res.best.length; s++) {
+      if (res.best[s] > end) continue;
+      if (W.stopNode[s] >= 0) src(W.stopNode[s], res.best[s] + W.stopSnap[s] / mps, W.stopSnap[s]);
+      else off.push({ lat: idx.stops.lat[s], lon: idx.stops.lon[s], elapsed: res.best[s] - res.nowSec });
+    }
+    while (hn > 0) {
+      const k = ws.hk[0], u = pop();
+      if (k > T[u]) continue;
+      t[u] = k; nodes.push(u);
+      for (let e = g.start[u]; e < g.start[u + 1]; e++) {
+        const v = g.to[e], w = walked[u] + g.len[e], nk = k + g.len[e] / mps;
+        if (w > cap || nk > end) continue;
+        if (stamp[v] !== cur || nk < T[v]) { stamp[v] = cur; T[v] = nk; walked[v] = w; push(nk, v); }
+      }
+    }
+    return { t, nodes: Int32Array.from(nodes), off };
+  },
+};
+
 const Engine = {
   grid(idx) {
     if (!idx._grid) Object.defineProperty(idx, "_grid", { value: Geo.makeGrid(idx.stops.lat, idx.stops.lon), enumerable: false });
@@ -1076,17 +1319,16 @@ const Engine = {
     const tripMode = idx.routes.mode, troute = idx.trips.route;
     const delay = o.rt && o.rt.delay, cancelled = o.rt && o.rt.cancelled;
 
-    // accesso a piedi dall'origine
-    const access = grid.near(o.lat, o.lon, o.maxWalk);
+    // accesso a piedi dall'origine: lungo le strade se c'è la rete pedonale, altrimenti stima
+    const access = Walk.stopsFrom(o.walk, idx, o.lat, o.lon, o.maxWalk);
     const accessDist = new Map();
     for (let i = 0; i < access.length; i += 2) {
       const s = access[i], t = o.nowSec + access[i + 1] / o.walkMps;
       accessDist.set(s, access[i + 1]);
       if (t < arr[0][s]) { arr[0][s] = t; if (t < best[s]) best[s] = t; }
     }
-    // cambi a piedi tra fermate vicine (calcolati al bisogno)
-    const nbCache = new Map();
-    const neighbours = (s) => { let a = nbCache.get(s); if (!a) nbCache.set(s, a = grid.near(idx.stops.lat[s], idx.stops.lon[s], o.maxWalk)); return a; };
+    // cambi a piedi tra fermate vicine (calcolati al bisogno, tenuti in cache con la rete pedonale)
+    const neighbours = (s) => Walk.stopsFromStop(o.walk, idx, s, o.maxWalk);
 
     const C = idx.conn, nC = C.dep.length;
     // prima connessione con partenza >= ora (meno 15 min per eventuali ritardi)
@@ -1145,15 +1387,16 @@ const Engine = {
   /**
    * Itinerario migliore dall'origine a un punto qualsiasi, usando i risultati di isochrone().
    * Restituisce null se il punto non è raggiungibile entro il tempo, altrimenti
-   * { arrive, leave, rides, walk, legs: [ {type:"walk", from, to, dist, dep, arr} | {type:"ride", trip, route, kFrom, kTo, from, to, dep, arr, live} ] }
-   * dove from/to dei tratti a piedi sono { stop } oppure { lat, lon } (origine o destinazione).
+   * { arrive, leave, rides, walk, estimated, legs: [ {type:"walk", from, to, dist, dep, arr, pts, estimated} | {type:"ride", trip, route, kFrom, kTo, from, to, dep, arr, live} ] }
+   * dove from/to dei tratti a piedi sono { stop } oppure { lat, lon } (origine o destinazione) e pts il percorso lungo le strade.
    */
   journey(idx, res, lat, lon) {
-    const o = res.opts, mps = o.walkMps, K = res.arr.length - 1;
+    const o = res.opts, W = o.walk, mps = o.walkMps, K = res.arr.length - 1;
     let bestT = Infinity, bestS = -1, bestK = -1, bestD = 0;
-    const d0 = Geo.dist(o.lat, o.lon, lat, lon);
+    const P = { lat, lon }, O = { lat: o.lat, lon: o.lon };
+    const direct = Walk.path(W, idx, O, P, o.maxWalk), d0 = direct ? direct.dist : Infinity;
     if (d0 <= o.maxWalk && res.nowSec + d0 / mps <= res.end) bestT = res.nowSec + d0 / mps;
-    const near = Engine.grid(idx).near(lat, lon, o.maxWalk);
+    const near = Walk.stopsFrom(W, idx, lat, lon, o.maxWalk);
     for (let i = 0; i < near.length; i += 2) {
       const s = near[i], d = near[i + 1];
       for (let k = 0; k <= K; k++) {
@@ -1162,8 +1405,7 @@ const Engine = {
       }
     }
     if (bestT === Infinity) return null;
-    const P = { lat, lon }, O = { lat: o.lat, lon: o.lon };
-    if (bestS < 0) return Engine._summary(res, [{ type: "walk", from: O, to: P, dist: d0, dep: res.nowSec, arr: bestT }], bestT);
+    if (bestS < 0) return Engine._summary(res, [{ type: "walk", from: O, to: P, dist: d0, dep: res.nowSec, arr: bestT, pts: direct.pts, estimated: direct.estimated }], bestT);
 
     // risalita dei genitori: tratto finale a piedi, poi corse e cambi a ritroso
     const legs = [{ type: "walk", from: { stop: bestS }, to: P, dist: bestD, dep: res.arr[bestK][bestS], arr: bestT }];
@@ -1177,8 +1419,7 @@ const Engine = {
       }
       const w = res.par.walk[k][s];
       if (w >= 0) {
-        const d = Geo.dist(idx.stops.lat[w], idx.stops.lon[w], idx.stops.lat[s], idx.stops.lon[s]);
-        legs.push({ type: "walk", from: { stop: w }, to: { stop: s }, dist: d, dep: res.arr[k][w], arr: res.arr[k][s] });
+        legs.push({ type: "walk", from: { stop: w }, to: { stop: s }, dist: (res.arr[k][s] - res.arr[k][w]) * mps, dep: res.arr[k][w], arr: res.arr[k][s] });
         s = w; continue;
       }
       const t = res.par.trip[k][s], b = res.par.board[k][s];
@@ -1192,11 +1433,16 @@ const Engine = {
       s = b; k--;
     }
     legs.reverse();
+    // percorso lungo le strade di ogni tratto a piedi
+    for (const l of legs) if (l.type === "walk") {
+      const p = Walk.path(W, idx, l.from, l.to, l.dist * 1.2 + 100) || Walk.path(null, idx, l.from, l.to);
+      l.pts = p.pts; l.estimated = p.estimated;
+    }
     // tratti a piedi consecutivi (cambio + ultimo tratto) uniti in uno solo; tratti di 0 m eliminati
     const out = [];
     for (const l of legs) {
       const p = out[out.length - 1];
-      if (l.type === "walk" && p && p.type === "walk") { p.to = l.to; p.dist += l.dist; p.arr = l.arr; }
+      if (l.type === "walk" && p && p.type === "walk") { p.to = l.to; p.dist += l.dist; p.arr = l.arr; p.pts = p.pts.concat(l.pts); p.estimated = p.estimated || l.estimated; }
       else out.push(l);
     }
     return Engine._summary(res, out.filter((l) => l.type === "ride" || l.dist >= 1), bestT);
@@ -1204,9 +1450,10 @@ const Engine = {
   _summary(res, legs, arrive) {
     const rides = legs.filter((l) => l.type === "ride"), mps = res.opts.walkMps;
     const walk = legs.reduce((a, l) => a + (l.type === "walk" ? l.dist : 0), 0);
+    const estimated = legs.some((l) => l.type === "walk" && l.estimated);
     // ora massima in cui uscire per prendere la prima corsa (senza aspettare alla fermata)
     const first = legs[0], leave = rides.length && first.type === "walk" && legs[1] === rides[0] ? rides[0].dep - first.dist / mps : rides.length ? rides[0].dep : res.nowSec;
-    return { arrive, leave: Math.max(res.nowSec, leave), rides: rides.length, walk, legs };
+    return { arrive, leave: Math.max(res.nowSec, leave), rides: rides.length, walk, estimated, legs };
   },
   /** Prossimi passaggi della stessa linea e direzione a una fermata, dopo un certo orario. */
   nextDepartures(idx, route, dir, stopIdx, afterSec, n, rt) {
@@ -1226,7 +1473,7 @@ const Engine = {
     }
     return out.sort((a, b) => a.dep - b.dep).slice(0, n);
   },
-  /** Punti per il disegno: origine + ogni fermata raggiunta, con il tempo già trascorso. */
+  /** Punti per il disegno senza rete pedonale: origine + ogni fermata raggiunta, con il tempo già trascorso. */
   isoPoints(idx, res) {
     const pts = [{ lat: res.opts.lat, lon: res.opts.lon, elapsed: 0 }];
     for (let s = 0; s < res.best.length; s++) if (res.best[s] <= res.end) pts.push({ lat: idx.stops.lat[s], lon: idx.stops.lon[s], elapsed: res.best[s] - res.nowSec });
@@ -1234,7 +1481,7 @@ const Engine = {
   },
 };
 
-return { Config, MODES, modeFromRouteType, Geo, Time, Csv, GtfsRt, GtfsStatic, Demo, Realtime, Engine, finalizeIndex };
+return { Config, MODES, modeFromRouteType, Geo, Time, Csv, GtfsRt, GtfsStatic, Demo, Realtime, Walk, Engine, finalizeIndex };
 })();
 if (typeof module !== "undefined") module.exports = Core;
 </script>
@@ -1245,14 +1492,14 @@ if (typeof module !== "undefined") module.exports = Core;
 <script id="app">
 "use strict";
 (() => {
-const { Config, MODES, Time, GtfsRt, GtfsStatic, Demo, Realtime, Engine } = Core;
+const { Config, MODES, Geo, Time, GtfsRt, GtfsStatic, Demo, Realtime, Walk, Engine } = Core;
 const $ = (s) => document.querySelector(s);
 
 /* ---------------- Preferenze (localStorage, solo comodità) ---------------- */
 const Prefs = {
   key: "hopon.prefs.v1",
   load() {
-    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null };
+    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null, walkRadiusKm: 6, walkBase: "" };
     try { return Object.assign(d, JSON.parse(localStorage.getItem(this.key) || "{}")); } catch { return d; }
   },
   save(p) { try { localStorage.setItem(this.key, JSON.stringify(p)); } catch {} },
@@ -1278,6 +1525,10 @@ const Cache = {
   },
   async set(k, v) {
     try { const db = await this.open(); await new Promise((res, rej) => { const tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").put(v, k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); return true; }
+    catch { return false; }
+  },
+  async del(k) {
+    try { const db = await this.open(); await new Promise((res, rej) => { const tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").delete(k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); return true; }
     catch { return false; }
   },
 };
@@ -1315,6 +1566,7 @@ const state = {
   dest: null,                // punto toccato sulla mappa (vista "Come arrivarci")
   journey: null,
   journeyFit: false,
+  walk: null,                // rete pedonale agganciata alle fermate (Walk.attach), null = distanze stimate
 };
 if (!state.prefs.origin) state.prefs.origin = { ...Config.defaultOrigin };
 const walkMps = () => state.prefs.walkKmh / 3.6;
@@ -1354,7 +1606,9 @@ const MapView = (() => {
   setTiles(); if (dark && dark.addEventListener) dark.addEventListener("change", setTiles);
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
-  /* Layer isocrona: unione di cerchi su canvas, tre fasce di tempo */
+  /* Layer isocrona su canvas, tre fasce di tempo:
+     - con la rete pedonale: le strade percorribili, colorate secondo il tempo di arrivo (anche a metà strada);
+     - senza rete (o per i punti fuori rete): cerchi stimati, raggio = min(cap, tempo residuo × velocità) / DETOUR. */
   const IsoLayer = L.Layer.extend({
     onAdd(m) {
       this._c = L.DomUtil.create("canvas", "iso-canvas"); this._off = document.createElement("canvas");
@@ -1363,7 +1617,7 @@ const MapView = (() => {
       this._draw();
     },
     onRemove(m) { L.DomUtil.remove(this._c); m.off("moveend zoomend resize viewreset", this._draw, this); m.off("zoomstart", this._hide, this); },
-    setData(pts, budget, cap, mps) { this._d = { pts, budget, cap, mps }; this._draw(); },
+    setData(d) { this._d = d; this._draw(); },
     _hide() { this._c.style.opacity = 0; },
     _draw() {
       const m = this._map; if (!m || !this._c) return;
@@ -1372,17 +1626,47 @@ const MapView = (() => {
       L.DomUtil.setPosition(c, m.containerPointToLayerPoint([0, 0]));
       const ctx = c.getContext("2d"), o = off.getContext("2d"); ctx.clearRect(0, 0, c.width, c.height); o.clearRect(0, 0, off.width, off.height);
       if (!this._d) { c.style.opacity = 1; return; }
-      const { pts, budget, cap, mps } = this._d, z = m.getZoom();
+      const { pts, budget, cap, mps, field, g, nowSec } = this._d, z = m.getZoom();
       const colors = [css("--band-3"), css("--band-2"), css("--band-1")];
       const limits = [budget, budget * 2 / 3, budget / 3];
-      const proj = pts.map((p) => { const q = m.latLngToContainerPoint([p.lat, p.lon]); return { x: q.x * dpr, y: q.y * dpr, e: p.elapsed, mpp: 40075016.686 * Math.cos(p.lat * Math.PI / 180) / (256 * Math.pow(2, z)) / dpr }; });
+      // proiezione Web Mercator → pixel del canvas
+      const scale = 256 * Math.pow(2, z), po = m.getPixelOrigin(), lo = m.containerPointToLayerPoint([0, 0]);
+      const X = (lon) => ((lon + 180) / 360 * scale - po.x - lo.x) * dpr;
+      const Y = (lat) => { const s = Math.sin(lat * Math.PI / 180); return ((0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * scale - po.y - lo.y) * dpr; };
+      const W = off.width, H = off.height;
+      if (field) {
+        const { t, nodes } = field, mpp = 40075016.686 * Math.cos(m.getCenter().lat * Math.PI / 180) / scale;
+        o.lineCap = "round"; o.lineJoin = "round"; o.lineWidth = Math.max(3, Math.min(18, 32 / mpp)) * dpr;
+        const n = nodes.length, px = new Float32Array(n), py = new Float32Array(n), el = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const u = nodes[i]; px[i] = X(g.lon[u]); py[i] = Y(g.lat[u]); el[i] = t[u] - nowSec; }
+        const pad = 60 * dpr;
+        for (let b = 0; b < 3; b++) {
+          const L = limits[b]; o.strokeStyle = colors[b]; o.beginPath();
+          for (let i = 0; i < n; i++) {
+            const u = nodes[i], eu = el[i]; if (eu > L) continue;
+            const x0 = px[i], y0 = py[i];
+            for (let e = g.start[u]; e < g.start[u + 1]; e++) {
+              const v = g.to[e], tv = t[v] - nowSec;
+              if (tv <= L && v < u) continue;                         // arco già disegnato dall'altro estremo
+              const x1 = X(g.lon[v]), y1 = Y(g.lat[v]);
+              if ((x0 < -pad && x1 < -pad) || (y0 < -pad && y1 < -pad) || (x0 > W + pad && x1 > W + pad) || (y0 > H + pad && y1 > H + pad)) continue;
+              const fu = Math.min(1, (L - eu) * mps / g.len[e]);
+              if (tv <= L || fu >= 1) { o.moveTo(x0, y0); o.lineTo(x1, y1); continue; }
+              const fv = tv < Infinity ? Math.max(0, (L - tv) * mps / g.len[e]) : 0;
+              if (fu + fv >= 1) { o.moveTo(x0, y0); o.lineTo(x1, y1); continue; }
+              if (fu > 0) { o.moveTo(x0, y0); o.lineTo(x0 + (x1 - x0) * fu, y0 + (y1 - y0) * fu); }
+            }
+          }
+          o.stroke();
+        }
+      }
       for (let b = 0; b < 3; b++) {
         o.fillStyle = colors[b]; o.beginPath();
-        for (const p of proj) {
-          const rM = Math.min(cap, (limits[b] - p.e) * mps); if (rM <= 0) continue;
-          const r = rM / p.mpp;
-          if (p.x + r < 0 || p.y + r < 0 || p.x - r > off.width || p.y - r > off.height) continue;
-          o.moveTo(p.x + r, p.y); o.arc(p.x, p.y, r, 0, Math.PI * 2);
+        for (const p of pts) {
+          const rM = Math.min(cap, (limits[b] - p.elapsed) * mps) / Walk.DETOUR; if (rM <= 0) continue;
+          const x = X(p.lon), y = Y(p.lat), r = rM / (40075016.686 * Math.cos(p.lat * Math.PI / 180) / scale) * dpr;
+          if (x + r < 0 || y + r < 0 || x - r > W || y - r > H) continue;
+          o.moveTo(x + r, y); o.arc(x, y, r, 0, Math.PI * 2);
         }
         o.fill();
       }
@@ -1500,8 +1784,8 @@ const MapView = (() => {
     const { start, stop, time } = idx.tstops, rides = j.legs.filter((l) => l.type === "ride");
     for (const l of j.legs) {
       if (l.type === "walk") {
-        const a = where(l.from), b = where(l.to); pts.push(a, b);
-        L.polyline([a, b], { color: ink, weight: 4, opacity: 0.75, dashArray: "1 9", lineCap: "round", interactive: false }).addTo(journeyLayer);
+        const ll = l.pts || [where(l.from), where(l.to)]; pts.push(...ll);
+        L.polyline(ll, { color: ink, weight: 4, opacity: l.estimated ? 0.45 : 0.8, dashArray: "1 9", lineCap: "round", lineJoin: "round", interactive: false }).addTo(journeyLayer);
         continue;
       }
       const color = routeColor(idx, l.route), p = tripPath(idx, l.trip), k0 = start[l.trip];
@@ -1621,12 +1905,13 @@ const UI = {
     MapView.pin.setLatLng([lat, lon]);
     if (pan) MapView.centerOn(lat, lon, Math.max(MapView.map.getZoom(), 14));
     UI.recompute(true);
+    WalkAreas.ensure(lat, lon);          // partenza fuori dalle aree scaricate → scarica la rete pedonale della zona
   },
   locate() {
     if (!navigator.geolocation) return toast("Il browser non fornisce la posizione");
     toast("Cerco la tua posizione…");
     navigator.geolocation.getCurrentPosition(
-      (pos) => { UI.setOrigin(pos.coords.latitude, pos.coords.longitude, true); toast("Partenza impostata sulla tua posizione"); },
+      (pos) => { UI.setOrigin(pos.coords.latitude, pos.coords.longitude, true); if (!WalkAreas.busy) toast("Partenza impostata sulla tua posizione"); },
       (err) => toast(err.code === 1 ? "Permesso posizione negato: tieni premuto sulla mappa per scegliere la partenza" : "Posizione non disponibile: tieni premuto sulla mappa"),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
     );
@@ -1643,15 +1928,16 @@ const UI = {
     const t0 = performance.now();
     const res = Engine.isochrone(state.idx, {
       lat: p.origin.lat, lon: p.origin.lon, nowSec: nowSec(), budgetSec: p.budgetMin * 60, maxWalk: p.maxWalk, walkMps: walkMps(),
-      modes: p.modes, maxRides: p.maxRides, rt: state.rt.delays,
+      modes: p.modes, maxRides: p.maxRides, rt: state.rt.delays, walk: state.walk,
     });
     state.result = res;
     if (state.selected >= 0 && !res.routes.has(state.selected)) state.selected = -1;
-    MapView.iso.setData(Engine.isoPoints(state.idx, res), p.budgetMin * 60, p.maxWalk, walkMps());
+    const field = state.walk ? Walk.field(state.walk, state.idx, res) : null;
+    MapView.iso.setData({ pts: field ? field.off : Engine.isoPoints(state.idx, res), field, g: state.walk && state.walk.g, nowSec: res.nowSec, budget: p.budgetMin * 60, cap: p.maxWalk, mps: walkMps() });
     UI.drawMap();
     UI.renderList(); UI.renderDetail(); UI.renderJourney(); UI.renderLegend();
     const nR = res.routes.size;
-    $("#sum-sub").textContent = nR ? `${nR} ${nR === 1 ? "linea" : "linee"} · ${res.reachedStops} fermate · calcolato in ${Math.round(performance.now() - t0)} ms` : "Nessun mezzo utile: allarga tempo o distanza a piedi";
+    $("#sum-sub").textContent = (nR ? `${nR} ${nR === 1 ? "linea" : "linee"} · ${res.reachedStops} fermate · ` : "Nessun mezzo utile · ") + (state.walk ? "a piedi lungo le strade" : "a piedi stimato");
   },
   renderLegend() {
     const b = state.prefs.budgetMin, a = Math.round(b / 3), c = Math.round(b * 2 / 3);
@@ -1735,7 +2021,7 @@ const UI = {
     j.legs.forEach((l, i) => {
       if (l.type === "walk") {
         const dur = l.arr - l.dep, dep = i === 0 ? t : l.dep;
-        const what = i > 0 && l.to.stop != null ? "Cambio a piedi" : "Cammina";
+        const what = (i > 0 && l.to.stop != null ? "Cambio a piedi" : "Cammina") + (l.estimated ? " circa" : "");
         html += `<li class="it it-walk"><span class="it-ic">${ICON_WALK}</span><div class="it-body"><div><b>${what} ${fmtDist(l.dist)}</b> · ${fmtDur(dur)}</div><div class="it-sub">${l.to.stop != null ? "fino a " + stopTxt(l.to.stop) : "fino al punto scelto"}</div></div><time>${clock(dep)}</time></li>`;
         t = dep + dur;
         return;
@@ -1763,7 +2049,7 @@ const UI = {
     const used = new Set(rides.map((l) => l.route));
     html += state.rt.alerts.filter((a) => [...a.routes].some((r) => used.has(r))).slice(0, 3)
       .map((a) => `<div class="alert-box"><strong>${esc(a.header)}</strong>${a.description ? "<br>" + esc(a.description.slice(0, 280)) : ""}</div>`).join("");
-    html += `<p class="hint">Tratti a piedi calcolati in linea d'aria. Tocca un altro punto per cambiare destinazione.</p>`;
+    html += `<p class="hint">${j.estimated ? "Alcuni tratti a piedi sono stimati: manca la rete pedonale di quella zona (Impostazioni → Percorsi a piedi)." : "Tratti a piedi lungo le strade · dati © OpenStreetMap."} Tocca un altro punto per cambiare destinazione.</p>`;
     box.innerHTML = html;
   },
   renderDetail() {
@@ -1808,6 +2094,101 @@ const UI = {
     else if (state.mode === "demo") tx.textContent = "Demo";
     else if (state.mode === "error") tx.textContent = "Dati non disponibili";
     else tx.textContent = "Avvio…";
+  },
+};
+
+/* ---------------- Aree della rete pedonale (tessere OSM in IndexedDB) ----------------
+   Le tessere stanno in <sito>/walk/ (generate da tools/build-walk-tiles.mjs, pubblicate con GitHub Pages).
+   Un'area è un cerchio (centro + raggio) con le sue tessere; tessere condivise tra aree sono salvate una volta sola.
+   Chiavi IndexedDB: walk:areas, walk:index, walk:t:<tx>_<ty> (gzip). */
+const WalkAreas = {
+  areas: [], index: null, graph: null, busy: false, loaded: false,
+  base() {
+    const b = (state.prefs.walkBase || "").trim();
+    if (b) return b.endsWith("/") ? b : b + "/";
+    return /^https?:$/.test(location.protocol) ? new URL("walk/", location.href).href : null;
+  },
+  async init() { this.areas = (await Cache.get("walk:areas")) || []; this.loaded = true; await this.load(); },
+  async fetchIndex() {
+    const b = this.base();
+    if (b) try { const r = await fetch(b + "index.json", { cache: "no-cache" }); if (r.ok) { this.index = await r.json(); Cache.set("walk:index", this.index); return this.index; } } catch {}
+    return this.index || (this.index = (await Cache.get("walk:index")) || null);
+  },
+  /** Tessere che toccano il cerchio (centro, raggio in km). */
+  tilesFor(index, lat, lon, km) {
+    const r = km * 1000, dLat = r / 110574, dLon = r / (111320 * Math.cos(lat * Math.PI / 180)), out = [];
+    for (let tx = Math.floor((lon - dLon) / index.tileLon); tx <= Math.floor((lon + dLon) / index.tileLon); tx++)
+      for (let ty = Math.floor((lat - dLat) / index.tileLat); ty <= Math.floor((lat + dLat) / index.tileLat); ty++) {
+        const k = tx + "_" + ty; if (!index.tiles[k]) continue;
+        const cLat = Math.max(ty * index.tileLat, Math.min(lat, (ty + 1) * index.tileLat)), cLon = Math.max(tx * index.tileLon, Math.min(lon, (tx + 1) * index.tileLon));
+        if (Geo.dist(lat, lon, cLat, cLon) <= r) out.push(k);
+      }
+    return out;
+  },
+  covered(lat, lon) { return this.areas.some((a) => Geo.dist(a.lat, a.lon, lat, lon) <= a.radiusKm * 1000 - 1500); },
+  /** Chiamata automatica (avvio, posizione, PIN spostato): scarica solo se il punto è fuori dalle aree. */
+  async ensure(lat, lon) {
+    if (!this.loaded || this.busy || this.covered(lat, lon) || !this.base()) return;
+    await this.add(lat, lon, state.prefs.walkRadiusKm || 6, true);
+  },
+  async add(lat, lon, km, auto) {
+    if (this.busy) return false;
+    const index = await this.fetchIndex();
+    if (!index) { if (!auto) toast("Rete pedonale non raggiungibile: apri l'app dal sito pubblicato"); return false; }
+    const keys = this.tilesFor(index, lat, lon, km);
+    if (!keys.length) { toast("Nessun dato sui percorsi a piedi per questa zona"); return false; }
+    this.busy = true;
+    try {
+      const stored = new Set((await Cache.get("walk:stored")) || []), missing = keys.filter((k) => !stored.has(k));
+      const total = missing.reduce((a, k) => a + index.tiles[k], 0); let got = 0, done = 0;
+      const msg = () => `Scarico i percorsi a piedi della zona · ${(got / 1e6).toFixed(1)} di ${(total / 1e6).toFixed(1)} MB`;
+      if (missing.length) loader(msg(), 0);
+      const queue = missing.slice();
+      await Promise.all([0, 1, 2, 3].map(async () => {
+        for (let k; (k = queue.shift());) {
+          const r = await fetch(this.base() + "t/" + k + ".bin.gz"); if (!r.ok) throw new Error("HTTP " + r.status);
+          const b = new Uint8Array(await r.arrayBuffer()); await Cache.set("walk:t:" + k, b);
+          stored.add(k); got += b.length; done++; loader(msg(), done / missing.length);
+        }
+      }));
+      await Cache.set("walk:stored", [...stored]);
+      const area = { id: String(Date.now()), name: this.nameFor(lat, lon), lat, lon, radiusKm: km, tiles: keys, bytes: keys.reduce((a, k) => a + index.tiles[k], 0), at: Date.now(), built: index.built };
+      this.areas = this.areas.filter((a) => !(Geo.dist(a.lat, a.lon, lat, lon) < 300 && a.radiusKm <= km)).concat(area);
+      await Cache.set("walk:areas", this.areas);
+      await this.load(); UI.recompute(true); Settings.renderAreas();
+      toast(`Percorsi a piedi pronti per ${area.name}`);
+      return true;
+    } catch (e) {
+      console.error(e); toast("Download dei percorsi a piedi non riuscito"); return false;
+    } finally { this.busy = false; loader(null); }
+  },
+  async remove(id) {
+    this.areas = this.areas.filter((a) => a.id !== id);
+    const keep = new Set(this.areas.flatMap((a) => a.tiles)), stored = (await Cache.get("walk:stored")) || [];
+    for (const k of stored) if (!keep.has(k)) await Cache.del("walk:t:" + k);
+    await Cache.set("walk:stored", stored.filter((k) => keep.has(k)));
+    await Cache.set("walk:areas", this.areas);
+    await this.load(); UI.recompute(true); Settings.renderAreas();
+  },
+  /** Riscarica le tessere di tutte le aree (dati OSM più recenti). */
+  async refresh() {
+    const old = this.areas.slice(); if (!old.length) return;
+    for (const k of (await Cache.get("walk:stored")) || []) await Cache.del("walk:t:" + k);
+    await Cache.set("walk:stored", []); this.areas = []; await Cache.set("walk:areas", []);
+    for (const a of old) await this.add(a.lat, a.lon, a.radiusKm, false);
+  },
+  /** Costruisce il grafo da tutte le tessere salvate e lo aggancia alle fermate. */
+  async load() {
+    const keys = [...new Set(this.areas.flatMap((a) => a.tiles))], tiles = [];
+    for (const k of keys) { const gz = await Cache.get("walk:t:" + k); if (gz) try { tiles.push(Walk.decodeTile(fflate.gunzipSync(gz))); } catch (e) { console.warn("tessera", k, e); } }
+    this.graph = tiles.length ? Walk.build(tiles) : null;
+    this.attach();
+  },
+  attach() { state.walk = this.graph && state.idx ? Walk.attach(this.graph, state.idx) : null; },
+  nameFor(lat, lon) {
+    const idx = state.idx;
+    if (idx && idx.source !== "demo") { const near = Engine.grid(idx).near(lat, lon, 1500); let bs = -1, bd = Infinity; for (let i = 0; i < near.length; i += 2) if (near[i + 1] < bd) { bd = near[i + 1]; bs = near[i]; } if (bs >= 0) return "zona " + stopName(idx, bs); }
+    return `zona ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
   },
 };
 
@@ -1860,6 +2241,11 @@ const Settings = {
     });
     $("#in-demo").addEventListener("change", async (e) => { state.prefs.demo = e.target.checked; Prefs.save(state.prefs); Settings.close(); await Boot.start(); });
     $("#in-speed").addEventListener("change", (e) => { state.prefs.walkKmh = +e.target.value; UI.recompute(); });
+    $("#in-walk-radius").addEventListener("change", (e) => { state.prefs.walkRadiusKm = +e.target.value; Prefs.save(state.prefs); });
+    $("#btn-walk-add").addEventListener("click", () => { const o = state.prefs.origin; WalkAreas.add(o.lat, o.lon, state.prefs.walkRadiusKm || 6, false); });
+    $("#btn-walk-refresh").addEventListener("click", () => WalkAreas.refresh());
+    $("#walk-areas").addEventListener("click", (e) => { const b = e.target.closest("[data-del-area]"); if (b) WalkAreas.remove(b.dataset.delArea); });
+    $("#in-walk-base").addEventListener("change", (e) => { state.prefs.walkBase = e.target.value.trim(); Prefs.save(state.prefs); WalkAreas.index = null; Settings.renderAreas(); });
     $("#in-carto").addEventListener("change", (e) => {
       state.prefs.cartoKey = e.target.value.trim(); Prefs.save(state.prefs); MapView.refreshTiles();
       toast(state.prefs.cartoKey ? "Mappe CARTO attivate" : "Uso le mappe OpenFreeMap");
@@ -1869,11 +2255,25 @@ const Settings = {
   async open() {
     $("#in-proxy").value = state.prefs.proxy; $("#in-carto").value = state.prefs.cartoKey || ""; $("#in-demo").checked = !!state.prefs.demo; $("#in-speed").value = String(state.prefs.walkKmh);
     $("#test-result").textContent = "";
+    $("#in-walk-radius").value = String(state.prefs.walkRadiusKm || 6); $("#in-walk-base").value = state.prefs.walkBase || "";
+    Settings.renderAreas();
     const meta = await Cache.get("zipMeta");
     $("#cache-info").textContent = meta ? `Orari GTT in cache: scaricati il ${new Date(meta.at).toLocaleString("it-IT")} (${(meta.size / 1e6).toFixed(1)} MB)` : "Nessun orario GTT in cache";
     $("#settings").hidden = false;
   },
   close() { $("#settings").hidden = true; },
+  async renderAreas() {
+    const ul = $("#walk-areas"), st = $("#walk-status"); if (!ul) return;
+    const A = WalkAreas.areas, base = WalkAreas.base();
+    const mb = (b) => (b / 1e6).toFixed(1).replace(".", ",") + " MB";
+    ul.innerHTML = A.length ? A.map((a) => `<li><span><b>${esc(state.idx && state.idx.source !== "demo" ? WalkAreas.nameFor(a.lat, a.lon) : a.name)}</b><small>raggio ${a.radiusKm} km · ${mb(a.bytes)} · scaricata il ${new Date(a.at).toLocaleDateString("it-IT")}</small></span><button class="btn" type="button" data-del-area="${esc(a.id)}">Elimina</button></li>`).join("")
+      : `<li class="empty">Nessuna area scaricata: i tratti a piedi sono stimati (linea d'aria × ${String(Walk.DETOUR).replace(".", ",")}).</li>`;
+    const stored = new Set(A.flatMap((a) => a.tiles)), tot = A.length ? [...stored].reduce((s, k) => s + ((WalkAreas.index && WalkAreas.index.tiles[k]) || 0), 0) : 0;
+    st.textContent = !base ? "Sorgente non disponibile: apri l'app dal sito pubblicato oppure indica l'indirizzo qui sotto."
+      : WalkAreas.graph ? `Rete pronta: ${WalkAreas.graph.n.toLocaleString("it-IT")} incroci e punti${tot ? " · " + mb(tot) + " in memoria" : ""}` : "Rete pedonale non ancora scaricata.";
+    const idx = await WalkAreas.fetchIndex().catch(() => null);
+    $("#btn-walk-refresh").hidden = !(idx && A.some((a) => a.built !== idx.built));
+  },
   async test() {
     state.prefs.proxy = $("#in-proxy").value.trim(); Prefs.save(state.prefs);
     const out = $("#test-result"); out.textContent = "Provo a leggere le posizioni dei mezzi…";
@@ -1976,15 +2376,20 @@ const Boot = {
       return Boot.demo(`Orari GTT non raggiungibili da questo browser, quindi vedi la <strong>demo</strong> con linee inventate. <button class="linkish" type="button" data-open-settings>Collega i dati reali</button>`);
     }
     banner("");
+    await Boot.walk();
     state.mode = "static"; UI.status(); UI.recompute(true);
     Data.pollRealtime();
+    WalkAreas.ensure(state.prefs.origin.lat, state.prefs.origin.lon);
     // nuovo giorno: ricostruisci l'indice
-    setInterval(async () => { if (state.idx && state.idx.source === "gtt" && state.idx.dateKey !== Time.dateKey(new Date())) { await Data.loadStatic(false); UI.recompute(true); } }, 60000);
+    setInterval(async () => { if (state.idx && state.idx.source === "gtt" && state.idx.dateKey !== Time.dateKey(new Date())) { await Data.loadStatic(false); WalkAreas.attach(); UI.recompute(true); } }, 60000);
   },
-  demo(msg) {
+  async walk() { if (!WalkAreas.loaded) await WalkAreas.init(); else WalkAreas.attach(); },
+  async demo(msg) {
     state.idx = Demo.build(new Date());
     state.mode = "demo"; UI.status(); banner(msg);
+    await Boot.walk();
     Data.startDemoTicker();
+    WalkAreas.ensure(state.prefs.origin.lat, state.prefs.origin.lon);
   },
 };
 

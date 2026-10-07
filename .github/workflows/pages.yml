@@ -1,0 +1,71 @@
+# Pubblica Hop on! su GitHub Pages: l'app (hop-on.html → index.html) e le tessere dei percorsi a piedi (walk/).
+# Le tessere non stanno nel repository: vengono rigenerate qui da un estratto OpenStreetMap a ogni push
+# e il primo giorno di ogni mese, così seguono gli aggiornamenti delle strade.
+name: Pubblica su GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "0 4 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  # Estratto OSM ordinato che copre Torino e la provincia (Piemonte, Liguria, Lombardia, VdA)
+  OSM_URL: https://download.geofabrik.de/europe/italy/nord-ovest-latest.osm.pbf
+  # Proxy usato solo se il runner non riesce a scaricare il GTFS GTT direttamente
+  GTFS_PROXY: ${{ vars.HOPON_PROXY || 'https://hopon-proxy.giulianoranauroiphone1.workers.dev/?url=' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Settimana corrente (chiave della cache OSM)
+        id: week
+        run: echo "key=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache dell'estratto OSM
+        uses: actions/cache@v4
+        with:
+          path: osm.pbf
+          key: osm-nord-ovest-${{ steps.week.outputs.key }}
+
+      - name: Scarica l'estratto OSM
+        run: test -s osm.pbf || curl -fsSL --retry 3 -o osm.pbf "$OSM_URL"
+
+      - name: Costruisci le tessere dei percorsi a piedi
+        run: node --max-old-space-size=6144 tools/build-walk-tiles.mjs --pbf osm.pbf --out _site/walk --proxy "$GTFS_PROXY"
+
+      - name: Prepara il sito
+        run: |
+          cp hop-on.html _site/index.html
+          cp hop-on.html _site/hop-on.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

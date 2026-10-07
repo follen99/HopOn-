@@ -1,0 +1,5 @@
+# tessere dei percorsi a piedi e dati OSM: si generano con tools/build-walk-tiles.mjs (vedi README)
+walk/
+_site/
+*.osm.pbf
+node_modules/
