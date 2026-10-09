@@ -25,7 +25,7 @@ L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto
 |---|---|
 | commento in `<head>` | mappa del file e URL dei dati |
 | `<style>` | design token su `:root` (tema chiaro/scuro) + componenti |
-| `<body>` | mappa, barra in alto, pannello inferiore trascinabile, modale impostazioni |
+| `<body>` | mappa, barra in alto, pallino e scheda delle impostazioni di viaggio, pannello inferiore trascinabile, modale impostazioni |
 | `script#proxy-worker-src` | codice del Cloudflare Worker (proxy CORS), come testo copiabile dalle Impostazioni |
 | `script#core` | logica pura **senza DOM**, esposta come `Core` e via `module.exports` |
 | `script#app` | tutto ciò che usa il browser (IIFE) |
@@ -34,11 +34,20 @@ L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto
 
 **Percorsi a piedi (`Walk`):** tessere ~2,8 × 2,8 km (`tileLat` 0,025°, `tileLon` 0,035°, letti da `walk/index.json`), formato `HOW1` gzip descritto in testa a `Walk` e in `writeTile`. `Walk.build` unisce le tessere (nodi di confine per coordinate) in un grafo CSR; i pezzi di rete con meno di 200 nodi sono "non principali" e l'aggancio li evita. `Walk.attach` aggancia le fermate. Un punto parte da tutti i nodi entro (distanza dal più vicino + 40 m) (`Walk.cands`), così piazze e cortili non allungano i percorsi. Dove la rete manca la distanza è stimata: linea d'aria × `Walk.DETOUR` (1,3), e il tratto è marcato `estimated`. `Walk.field` (Dijkstra multi-sorgente in tempo, max `maxWalk` per tratto) dà il tempo di arrivo per nodo: il layer isocrona disegna le strade colorate; i punti fuori rete restano cerchi.
 
-**Preferenza per camminare:** `Config.rideGainSec` (120 s) e `opts.preferWalk` (slider "Preferisco camminare sotto", default 200 m). Nel CSA un arrivo a una fermata con più corse vale solo se batte gli arrivi con meno corse di `Engine.margin(lastWalk)`: 120 s, oppure l'intero tempo dell'ultimo tratto a piedi se è ≤ `preferWalk`. Stessa regola in `Engine.journey` tra le opzioni per numero di corse. Gli itinerari e l'area disegnata finiscono solo da fermate dove si scende da un mezzo (`Engine.rideArrival`), così nessun tratto a piedi supera `maxWalk`.
+**Preferenza per camminare:** `Config.rideGainSec` (120 s) e `opts.preferWalk` (slider "Preferisco camminare sotto", default 200 m). La preferenza non supera mai il massimo a piedi: `Prefs.fix` (all'avvio e a ogni slider) porta i valori nei limiti di `Prefs.LIMITS` e mette `preferWalk = min(preferWish, maxWalk)`, dove `preferWish` è l'ultima scelta dell'utente (se il massimo risale, la preferenza torna lì). I due slider a piedi hanno la stessa scala 0–1000 m; i valori non ammessi sono tratteggiati sulla barra (`--a`/`--b`). Nel CSA un arrivo a una fermata con più corse vale solo se batte gli arrivi con meno corse di `Engine.margin(lastWalk)`: 120 s, oppure l'intero tempo dell'ultimo tratto a piedi se è ≤ `preferWalk`. Stessa regola in `Engine.journey` tra le opzioni per numero di corse. Gli itinerari e l'area disegnata finiscono solo da fermate dove si scende da un mezzo (`Engine.rideArrival`), così nessun tratto a piedi supera `maxWalk`.
 
 `Engine.isochrone` salva per ogni round e fermata il "genitore" (corsa + fermata di salita, oppure fermata da cui si arriva a piedi); `Engine.journey` lo usa per ricostruire l'itinerario verso un punto qualsiasi, `Engine.nextDepartures` dà i passaggi successivi a una fermata.
 
 **Interazioni sulla mappa:** tocco breve = "Come arrivarci" (vista `journey` nel pannello; fuori dall'area → messaggio breve); pressione prolungata ≥ 550 ms o clic destro = sposta la partenza; il PIN resta trascinabile. Le linee disegnate non sono toccabili (coprirebbero l'area): una linea si seleziona dalla lista, da un mezzo live o da un badge nell'itinerario.
+
+**Mappa e pannello (interfaccia mobile alleggerita):**
+- Linee raggiungibili disegnate per intero, tenui; marcato il tratto percorribile entro il tempo (`reachSegment`).
+- Area a un colore (tre fasce con `prefs.isoBands`).
+- In alto a destra: ingranaggio = "Dati e impostazioni" (modale); sotto, pallino flottante = **impostazioni di viaggio** (tempo, a piedi, preferenza, mezzi, cambi) con i minuti nel badge (`UI.syncFilters`). La scheda (`#trip-panel`, `UI.tripPanel`) resta aperta anche con un itinerario: ogni modifica ricalcola area e itinerario, e la riga in cima (`UI.renderTripRes`) mostra il risultato aggiornato; aperta, il pannello in basso scende al minimo e torna com'era alla chiusura.
+- Il pannello in basso mostra solo "In arrivo vicino a te", il dettaglio linea o l'itinerario.
+- Lista "In arrivo vicino a te" (`UI.renderList`: per linea e direzione il primo passaggio prendibile a piedi, `byDir` con `round === 1`); le linee raggiungibili solo con cambi stanno sotto come badge.
+- Soglie di zoom in `MapView` (`Z`): sotto 14 i mezzi diventano pallini per gruppo (mappa generale) o piccoli cerchi (linea/itinerario), sotto 12 la mappa generale non ne mostra, sotto 13 si nasconde `dotsLayer` (fermate intermedie, frecce).
+- **Convenzione di direzione**, valida in tutta l'app: la freccia (`arrowSvg`) o il triangolo puntano dove va il mezzo; il cerchio (`.stop-mark`) è la fermata dove scendi. Etichette dell'itinerario: salita = freccia + linea, discesa = cerchio + linea; si aprono al tocco col nome della fermata.
 
 `app` contiene: `Prefs` (localStorage `hopon.prefs.v1`), `Cache` (IndexedDB `hopon`/`kv`), `Net`, `MapView` (Leaflet + layer isocrona su canvas), `UI`, `WalkAreas`, `Sheet`, `Settings`, `Data`, `Boot`.
 
@@ -87,4 +96,5 @@ Per l'interfaccia con i percorsi a piedi serve http: generare `walk/` (es. da BB
 - Non verificati: prestazioni sul telefono.
 - **Pubblicazione (9 ottobre 2026):** sito online su https://follen99.github.io/HopOn-/ (Pages con Source = GitHub Actions), ma con la versione del commit `4632bd7`; in locale ci sono commit non ancora inviati e modifiche non salvate (mezzi filtrati, direzione). Il secret `HOPON_PROXY` va creato su GitHub perché il sito abbia il proxy predefinito.
 - L'utente prova anche dal telefono tramite il server locale (`http://<IP del PC>:8080/hop-on.html`).
-- Prossimi passi: vedi [UPGRADES.md](UPGRADES.md) (prima l'alleggerimento dell'interfaccia mobile, §1).
+- Interfaccia mobile alleggerita (UPGRADES §1.1–1.6) fatta e verificata su localhost il 9 ottobre 2026.
+- Prossimi passi: vedi [UPGRADES.md](UPGRADES.md). Prima la **fluidità su mobile** (§3.8, con l'elenco dei punti caldi), poi il Web Worker per gli orari (§3.2).

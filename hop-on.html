@@ -137,6 +137,35 @@ button { cursor: pointer; }
 .dir-key { display: inline-block; width: 22px; height: 14px; border-radius: 4px; background: var(--line-c, var(--ink)); vertical-align: -2px; margin-right: 6px; }
 .dir-key.d0 { box-shadow: inset 0 3px 0 rgba(255,255,255,.95); }
 .dir-key.d1 { box-shadow: inset 0 -3px 0 rgba(255,255,255,.95); }
+/* mappa rimpicciolita: un pallino per gruppo di mezzi della stessa linea, con il numero */
+.veh-group {
+  display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 3px 0 5px; border-radius: 9px;
+  background: var(--veh-c); color: #fff; font: 600 10px/1 var(--f-display); white-space: nowrap;
+  box-shadow: 0 0 0 2px var(--surface), var(--shadow); transform: translate(-50%, -50%);
+}
+.veh-group b { background: var(--surface); color: var(--ink); border-radius: 6px; padding: 2px 3px; font: 500 9px/1 var(--f-mono); }
+.veh-group.est { background: var(--surface); color: var(--veh-c); box-shadow: inset 0 0 0 1.5px var(--veh-c), 0 0 0 2px var(--surface), var(--shadow); }
+/* Convenzione di direzione (uguale in tutta l'app): la freccia punta dove va il mezzo; il cerchio è la fermata dove scendi. */
+.arrow { width: 12px; height: 12px; fill: currentColor; flex: none; display: block; }
+.stop-mark { width: 10px; height: 10px; border-radius: 50%; border: 3px solid currentColor; flex: none; display: inline-block; }
+/* etichette fisse dell'itinerario: freccia + linea alla salita, cerchio + linea alla discesa; il nome della fermata si apre al tocco */
+.jtag {
+  position: absolute; left: 0; top: 0; display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 4px; border-radius: 999px;
+  background: var(--jt-c); color: #fff; font: 700 13px/1 var(--f-display); white-space: nowrap; cursor: pointer;
+  box-shadow: 0 0 0 2px var(--surface), var(--shadow);
+}
+.jtag.up { transform: translate(-50%, calc(-100% - 11px)); }
+.jtag.down { transform: translate(-50%, 11px); }
+.jtag::after { content: ""; position: absolute; left: 50%; margin-left: -5px; border: 5px solid transparent; }
+.jtag.up::after { bottom: -9px; border-top: 6px solid var(--jt-c); }
+.jtag.down::after { top: -9px; border-bottom: 6px solid var(--jt-c); }
+.jtag .jdir { width: 18px; height: 18px; border-radius: 50%; background: var(--surface); color: var(--ink); display: grid; place-items: center; }
+.jtag.off { background: var(--surface); color: var(--jt-c); box-shadow: inset 0 0 0 2px var(--jt-c), 0 0 0 2px var(--surface), var(--shadow); padding-left: 7px; }
+.jtag .nm { display: none; font: 600 12px/1 var(--f-body); }
+.jtag.off .nm { color: var(--ink); }
+.jtag.open .nm { display: inline; }
+.jchev { display: grid; place-items: center; }
+.jchev .arrow { width: 11px; height: 11px; fill: var(--surface); stroke: var(--jt-c); stroke-width: 1px; }
 .stop-dot-label { font: 600 12px/1.2 var(--f-body); }
 #map { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .dest { width: 22px; height: 22px; border-radius: 50%; background: var(--ink); border: 5px solid var(--surface); box-shadow: 0 0 0 2px var(--ink), var(--shadow); }
@@ -178,7 +207,7 @@ button { cursor: pointer; }
   bottom: calc(var(--sheet-offset, 132px) + 14px); transition: bottom .25s;
 }
 .banner {
-  position: fixed; left: 12px; right: 12px; z-index: 880;
+  position: fixed; left: 12px; right: 66px; z-index: 880;
   top: calc(env(safe-area-inset-top, 0px) + 62px);
   background: var(--surface); border-radius: var(--r-md); box-shadow: var(--shadow);
   padding: 10px 12px; font-size: 13px; display: flex; gap: 10px; align-items: flex-start;
@@ -209,11 +238,63 @@ button { cursor: pointer; }
 .legend { display: flex; gap: 10px; font: 500 11px/1 var(--f-mono); color: var(--muted); flex-wrap: wrap; padding-bottom: 12px; }
 .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 4px; }
 
-.controls { display: grid; gap: 14px; padding: 4px 0 14px; border-bottom: 1px solid var(--hairline); }
+/* impostazioni di viaggio: pallino flottante sotto l'ingranaggio + scheda che resta aperta sopra la mappa,
+   così si vede subito come cambiano area e itinerario */
+.trip-fab { position: fixed; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 62px); z-index: 900; }
+.trip-btn { position: relative; }
+.trip-btn[aria-expanded="true"] { background: var(--ink); color: var(--surface); }
+.trip-badge {
+  position: absolute; right: -5px; bottom: -5px; min-width: 24px; height: 18px; padding: 0 4px; border-radius: 9px;
+  background: var(--accent); color: var(--accent-ink); font: 500 10px/18px var(--f-mono); text-align: center; box-shadow: 0 0 0 2px var(--surface);
+}
+.trip-panel {
+  position: fixed; z-index: 890; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 114px); width: min(340px, calc(100vw - 24px));
+  max-height: max(170px, calc(100dvh - var(--sheet-offset, 132px) - env(safe-area-inset-top, 0px) - 126px));
+  overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border-radius: var(--r-md); box-shadow: var(--shadow); padding: 8px 14px 2px;
+}
+.tp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tp-head h2 { margin: 0; font: 700 16px/1.2 var(--f-display); }
+.tp-head .x { border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; padding: 4px 2px 4px 8px; }
+/* risultato aggiornato a ogni modifica (itinerario o area), in cima alla scheda */
+.tp-res {
+  position: sticky; top: -8px; z-index: 1; margin: 6px -14px 0; padding: 7px 14px; background: var(--surface-2);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px; color: var(--muted);
+}
+.tp-res b { color: var(--ink); font-family: var(--f-display); font-size: 14px; }
+.tp-res .badge { min-width: 28px; height: 22px; padding: 0 6px; font-size: 12px; border-radius: 6px; }
+.tp-res .badge.metro { width: 22px; min-width: 22px; }
+.tp-res.flash { animation: tp-flash .6s ease-out; }
+@keyframes tp-flash { from { background: color-mix(in srgb, var(--accent) 22%, var(--surface-2)); } }
+.trip-panel .controls { gap: 8px; padding: 8px 0 12px; }
+.trip-panel .ctl label, .trip-panel .ctl .lbl { margin-bottom: 0; font-size: 12.5px; }
+.trip-panel input[type=range] { height: 24px; }
+.trip-panel .ctl-help { font-size: 11.5px; margin: 0; }
+.trip-panel .chips { gap: 6px; }
+.trip-panel .chip { padding: 5px 10px; font-size: 13px; }
+.trip-panel .seg button { padding: 5px 12px; font-size: 13px; }
+.controls { display: grid; gap: 10px; padding: 6px 0 12px; }
 .ctl label, .ctl .lbl { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 .ctl output { font: 500 14px/1 var(--f-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
 .ctl-help { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
-input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; margin: 0; }
+/* Slider disegnati a mano: riempimento fino al valore, valori non ammessi tratteggiati.
+   --a / --b = inizio e fine dei valori ammessi, --v = valore (percentuali, impostate da UI.init). */
+input[type=range] {
+  --a: 0%; --v: 0%; --b: 100%;
+  --range-track:
+    linear-gradient(to right, transparent 0 var(--a), var(--accent) var(--a) var(--v), var(--hairline) var(--v) var(--b), transparent var(--b)),
+    repeating-linear-gradient(-45deg, var(--surface-2) 0 3px, color-mix(in srgb, var(--muted) 40%, var(--surface-2)) 3px 5px);
+  -webkit-appearance: none; appearance: none; width: 100%; height: 28px; margin: 0; background: transparent; cursor: pointer;
+}
+input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--range-track); }
+input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--range-track); }
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 22px; height: 22px; margin-top: -8px; border-radius: 50%;
+  background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,.35);
+}
+input[type=range]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+input[type=range]:focus-visible { outline: none; }
+input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 999px;
@@ -241,13 +322,20 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; marg
 }
 button.badge { border: 0; }
 .badge.metro { border-radius: 50%; min-width: 30px; width: 30px; padding: 0; }
-.li-main { min-width: 0; }
+.li-main { min-width: 0; display: grid; }
 .li-main .t { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .li-main .s { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .li-when { text-align: right; font: 500 14px/1.2 var(--f-mono); font-variant-numeric: tabular-nums; }
 .li-when small { display: block; font: 400 11px/1.2 var(--f-body); color: var(--muted); }
 .live-tag { display: inline-block; font: 600 10px/1 var(--f-display); letter-spacing: .06em; text-transform: uppercase; color: var(--ok); margin-left: 4px; }
 .empty { color: var(--muted); padding: 16px 0; font-size: 14px; }
+.via { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 12px 0 4px; font-size: 13px; color: var(--muted); }
+.via .badge { min-width: 34px; height: 26px; font-size: 14px; }
+.via .badge.metro { width: 26px; min-width: 26px; }
+.jkey { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.jkey .k { display: inline-flex; align-items: center; gap: 5px; }
+.jkey .arrow { color: var(--ink); }
+.jkey .stop-mark { width: 9px; height: 9px; border-width: 2.5px; color: var(--ink); }
 
 /* dettaglio linea */
 .detail-head { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
@@ -353,11 +441,50 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
   <button class="chip-status" id="status" data-s="idle" type="button" aria-live="polite"><span class="dot"></span><span id="status-text">Avvio…</span></button>
   <span class="spacer"></span>
   <button class="icon-btn" id="btn-settings" type="button" aria-label="Impostazioni e dati">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
 </header>
 
 <div class="banner" id="banner" hidden><p id="banner-text"></p><button class="x" id="banner-x" type="button" aria-label="Chiudi avviso">×</button></div>
+
+<!-- impostazioni di viaggio: pallino flottante sotto l'ingranaggio, apribile anche durante un itinerario -->
+<div class="trip-fab">
+  <button class="icon-btn trip-btn" id="btn-trip" type="button" aria-expanded="false" aria-controls="trip-panel" aria-label="Impostazioni di viaggio">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    <span class="trip-badge" id="trip-badge" aria-hidden="true">20′</span>
+  </button>
+</div>
+<div class="trip-panel" id="trip-panel" hidden role="dialog" aria-labelledby="trip-title">
+  <div class="tp-head"><h2 id="trip-title">Impostazioni di viaggio</h2><button class="x" id="trip-close" type="button" aria-label="Chiudi le impostazioni di viaggio">×</button></div>
+  <div class="tp-res" id="trip-res" aria-live="polite"></div>
+  <div class="controls" id="controls">
+    <div class="ctl">
+      <label for="in-time"><span>Tempo a disposizione</span><output id="out-time">20 min</output></label>
+      <input type="range" id="in-time" min="5" max="60" step="5" value="20">
+    </div>
+    <div class="ctl">
+      <label for="in-walk"><span>A piedi, massimo per tratto</span><output id="out-walk">400 m</output></label>
+      <input type="range" id="in-walk" min="0" max="1000" step="50" value="400">
+    </div>
+    <div class="ctl">
+      <label for="in-prefer"><span>Preferisco camminare sotto</span><output id="out-prefer">200 m</output></label>
+      <input type="range" id="in-prefer" min="0" max="1000" step="50" value="200" aria-describedby="prefer-help">
+      <p class="ctl-help" id="prefer-help">Sotto questa distanza cammini invece di prendere un mezzo; sopra, un mezzo o un cambio in più solo se fa arrivare almeno 2 min prima. Non supera il massimo a piedi e lo segue se lo abbassi.</p>
+    </div>
+    <div class="ctl">
+      <span class="lbl"><span>Mezzi utilizzabili</span></span>
+      <div class="chips" id="mode-chips"></div>
+    </div>
+    <div class="ctl">
+      <span class="lbl"><span>Cambi</span></span>
+      <div class="seg" id="seg-transfers" role="group" aria-label="Numero massimo di cambi">
+        <button type="button" data-v="1">Nessuno</button>
+        <button type="button" data-v="2">Max 1</button>
+        <button type="button" data-v="3">Max 2</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="loader" id="loader" hidden><span id="loader-text">Carico…</span><span class="bar"><i id="loader-bar"></i></span></div>
 
@@ -373,42 +500,14 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
 
     <div id="view-main">
       <div class="summary">
-        <h2 id="sum-title">Dove arrivi in 20 min</h2>
+        <h2 id="lines-title">In arrivo vicino a te</h2>
         <span class="sub" id="sum-sub">Calcolo l'area raggiungibile…</span>
       </div>
-      <div class="legend" id="legend"></div>
-      <p class="hint">Tocca un punto della mappa per vedere come arrivarci. Tieni premuto per spostare la partenza.</p>
+      <div class="legend" id="legend" hidden></div>
+      <p class="hint" id="hint">Tocca un punto della mappa per vedere come arrivarci. Tieni premuto per spostare la partenza.</p>
 
-      <div class="controls">
-        <div class="ctl">
-          <label for="in-time"><span>Tempo a disposizione</span><output id="out-time">20 min</output></label>
-          <input type="range" id="in-time" min="5" max="60" step="5" value="20">
-        </div>
-        <div class="ctl">
-          <label for="in-walk"><span>A piedi, massimo per tratto</span><output id="out-walk">400 m</output></label>
-          <input type="range" id="in-walk" min="100" max="1000" step="50" value="400">
-        </div>
-        <div class="ctl">
-          <label for="in-prefer"><span>Preferisco camminare sotto</span><output id="out-prefer">200 m</output></label>
-          <input type="range" id="in-prefer" min="0" max="1000" step="50" value="200" aria-describedby="prefer-help">
-          <p class="ctl-help" id="prefer-help">Sotto questa distanza cammini invece di prendere un mezzo. Sopra, un mezzo o un cambio in più si propone solo se ti fa arrivare almeno 2 minuti prima.</p>
-        </div>
-        <div class="ctl">
-          <span class="lbl"><span>Mezzi utilizzabili</span></span>
-          <div class="chips" id="mode-chips"></div>
-        </div>
-        <div class="ctl">
-          <span class="lbl"><span>Cambi</span></span>
-          <div class="seg" id="seg-transfers" role="group" aria-label="Numero massimo di cambi">
-            <button type="button" data-v="1">Nessuno</button>
-            <button type="button" data-v="2">Max 1</button>
-            <button type="button" data-v="3">Max 2</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="section-title" id="lines-title">Linee utili</div>
       <ul class="lines" id="lines"></ul>
+      <div class="via" id="via" hidden></div>
     </div>
 
     <div id="view-detail" hidden></div>
@@ -433,7 +532,8 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
 
     <label class="switch"><span>Mostra i mezzi in tempo reale (GPS)</span><input type="checkbox" id="in-veh-live"></label>
     <label class="switch"><span>Mostra i mezzi stimati dall'orario (senza GPS, es. metro)</span><input type="checkbox" id="in-veh-est"></label>
-    <p>Sulla mappa compaiono solo i mezzi che stanno per passare dalle fermate raggiungibili a piedi; toccando una linea vedi tutti i suoi mezzi. La barretta in alto o in basso nel riquadro indica la direzione.</p>
+    <p>Sulla mappa compaiono solo i mezzi che stanno per passare dalle fermate raggiungibili a piedi; toccando una linea vedi tutti i suoi mezzi. Il triangolo accanto al mezzo punta dove sta andando, come la freccia sulle etichette dell'itinerario; la barretta in alto o in basso indica il capolinea (vedi "Verso …" nel dettaglio della linea). Rimpicciolendo la mappa i mezzi si raggruppano per linea.</p>
+    <label class="switch"><span>Area raggiungibile a fasce di tempo (tre colori)</span><input type="checkbox" id="in-iso-bands"></label>
     <label class="switch"><span>Modalità demo (linee inventate)</span><input type="checkbox" id="in-demo"></label>
 
     <label class="field"><span>Passo a piedi</span>
@@ -1592,8 +1692,26 @@ const $ = (s) => document.querySelector(s);
 const Prefs = {
   key: "hopon.prefs.v1",
   load() {
-    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null, walkRadiusKm: 6, walkBase: "", preferWalk: 200, vehLive: true, vehScheduled: true };
-    try { return Object.assign(d, JSON.parse(localStorage.getItem(this.key) || "{}")); } catch { return d; }
+    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null, walkRadiusKm: 6, walkBase: "", preferWalk: 200, vehLive: true, vehScheduled: true, isoBands: false, hintSeen: false };
+    let p; try { p = Object.assign(d, JSON.parse(localStorage.getItem(this.key) || "{}")); } catch { p = d; }
+    return Prefs.fix(p);
+  },
+  /** Limiti dei controlli di viaggio [min, max, passo], gli stessi degli slider. */
+  LIMITS: { budgetMin: [5, 60, 5], maxWalk: [100, 1000, 50], preferWalk: [0, 1000, 50] },
+  /**
+   * Valori di viaggio validi e coerenti: nei limiti, multipli del passo, e "preferisco camminare sotto" mai oltre
+   * "a piedi, massimo per tratto". preferWish è l'ultima preferenza scelta dall'utente: se il limite a piedi scende
+   * sotto, la preferenza effettiva (preferWalk) lo segue; se risale, la preferenza torna fino al valore scelto.
+   */
+  fix(p) {
+    const L = Prefs.LIMITS, snap = (v, [lo, hi, st], def) => { v = Number(v); if (!Number.isFinite(v)) v = def; return Math.min(hi, Math.max(lo, Math.round(v / st) * st)); };
+    p.budgetMin = snap(p.budgetMin, L.budgetMin, 20);
+    p.maxWalk = snap(p.maxWalk, L.maxWalk, 400);
+    p.preferWish = snap(p.preferWish != null ? p.preferWish : p.preferWalk, L.preferWalk, 200);
+    p.preferWalk = Math.min(p.preferWish, p.maxWalk);
+    p.maxRides = [1, 2, 3].includes(+p.maxRides) ? +p.maxRides : 2;
+    p.modes = Array.isArray(p.modes) && p.modes.length === MODES.length ? p.modes.map(Boolean) : MODES.map(() => true);
+    return p;
   },
   save(p) { try { localStorage.setItem(this.key, JSON.stringify(p)); } catch {} },
 };
@@ -1680,6 +1798,8 @@ const state = {
 if (!state.prefs.origin) state.prefs.origin = { ...Config.defaultOrigin };
 const walkMps = () => state.prefs.walkKmh / 3.6;
 const nowSec = () => Time.secOfDay(Date.now(), state.idx ? state.idx.dayStart : Time.dayStart(new Date()));
+/** Freccia di direzione, convenzione unica dell'app: punta dove va il mezzo (deg = gradi da nord, in senso orario). */
+const arrowSvg = (deg) => `<svg class="arrow" viewBox="-6 -6 12 12" aria-hidden="true" style="transform:rotate(${Math.round(deg)}deg)"><path d="M0 -5.2L4.4 4.6L0 2.4L-4.4 4.6Z"/></svg>`;
 
 /* ---------------- Mappa ---------------- */
 const MapView = (() => {
@@ -1715,7 +1835,7 @@ const MapView = (() => {
   setTiles(); if (dark && dark.addEventListener) dark.addEventListener("change", setTiles);
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
-  /* Layer isocrona su canvas, tre fasce di tempo:
+  /* Layer isocrona su canvas, un solo colore (oppure tre fasce di tempo se prefs.isoBands):
      - con la rete pedonale: le strade percorribili, colorate secondo il tempo di arrivo (anche a metà strada);
      - senza rete (o per i punti fuori rete): cerchi stimati, raggio = min(cap, tempo residuo × velocità) / DETOUR. */
   const IsoLayer = L.Layer.extend({
@@ -1735,9 +1855,9 @@ const MapView = (() => {
       L.DomUtil.setPosition(c, m.containerPointToLayerPoint([0, 0]));
       const ctx = c.getContext("2d"), o = off.getContext("2d"); ctx.clearRect(0, 0, c.width, c.height); o.clearRect(0, 0, off.width, off.height);
       if (!this._d) { c.style.opacity = 1; return; }
-      const { pts, budget, cap, mps, field, g, nowSec } = this._d, z = m.getZoom();
-      const colors = [css("--band-3"), css("--band-2"), css("--band-1")];
-      const limits = [budget, budget * 2 / 3, budget / 3];
+      const { pts, budget, cap, mps, field, g, nowSec, bands } = this._d, z = m.getZoom();
+      const colors = bands ? [css("--band-3"), css("--band-2"), css("--band-1")] : [css("--band-2")];
+      const limits = bands ? [budget, budget * 2 / 3, budget / 3] : [budget], nb = limits.length;
       // proiezione Web Mercator → pixel del canvas
       const scale = 256 * Math.pow(2, z), po = m.getPixelOrigin(), lo = m.containerPointToLayerPoint([0, 0]);
       const X = (lon) => ((lon + 180) / 360 * scale - po.x - lo.x) * dpr;
@@ -1749,7 +1869,7 @@ const MapView = (() => {
         const n = nodes.length, px = new Float32Array(n), py = new Float32Array(n), el = new Float32Array(n);
         for (let i = 0; i < n; i++) { const u = nodes[i]; px[i] = X(g.lon[u]); py[i] = Y(g.lat[u]); el[i] = t[u] - nowSec; }
         const pad = 60 * dpr;
-        for (let b = 0; b < 3; b++) {
+        for (let b = 0; b < nb; b++) {
           const L = limits[b]; o.strokeStyle = colors[b]; o.beginPath();
           for (let i = 0; i < n; i++) {
             const u = nodes[i], eu = el[i]; if (eu > L) continue;
@@ -1769,7 +1889,7 @@ const MapView = (() => {
           o.stroke();
         }
       }
-      for (let b = 0; b < 3; b++) {
+      for (let b = 0; b < nb; b++) {
         o.fillStyle = colors[b]; o.beginPath();
         for (const p of pts) {
           const rM = Math.min(cap, (limits[b] - p.elapsed) * mps) / Walk.DETOUR; if (rM <= 0) continue;
@@ -1786,7 +1906,13 @@ const MapView = (() => {
   const iso = new IsoLayer().addTo(map);
   const linesLayer = L.layerGroup().addTo(map);
   const stopsLayer = L.layerGroup().addTo(map);
+  const dotsLayer = L.layerGroup().addTo(map);      // dettagli minori (fermate intermedie, frecce lungo l'itinerario): nascosti a zoom basso
   const vehLayer = L.layerGroup().addTo(map);
+  /* Meno dettagli a zoom basso. Sotto VEH_FULL i mezzi diventano pallini (uno per gruppo di mezzi della stessa linea
+     nella mappa generale, piccoli cerchi per la linea selezionata/itinerario); sotto VEH_NONE la mappa generale non ne mostra. */
+  const Z = { vehFull: 14, vehNone: 12, dots: 13 };
+  const syncDots = () => { const on = map.getZoom() >= Z.dots; if (on !== map.hasLayer(dotsLayer)) on ? dotsLayer.addTo(map) : map.removeLayer(dotsLayer); };
+  map.on("zoomend", syncDots); syncDots();
 
   const pin = L.marker([state.prefs.origin.lat, state.prefs.origin.lon], {
     draggable: true, zIndexOffset: 1000, keyboard: true, title: "Punto di partenza",
@@ -1804,7 +1930,7 @@ const MapView = (() => {
   const longPress = (latlng) => {
     cancelPress(); suppressUntil = Date.now() + 800;
     if (navigator.vibrate) try { navigator.vibrate(15); } catch {}
-    UI.setOrigin(latlng.lat, latlng.lng, false); toast("Partenza spostata qui");
+    UI.setOrigin(latlng.lat, latlng.lng, false); UI.hintDone(); toast("Partenza spostata qui");
   };
   box.addEventListener("pointerdown", (e) => {
     cancelPress();
@@ -1819,30 +1945,69 @@ const MapView = (() => {
   map.on("click", (e) => { if (Date.now() >= suppressUntil) UI.tapPoint(e.latlng.lat, e.latlng.lng); });
 
   const routeColor = (idx, r) => idx.routes.color[r] && idx.routes.color[r] !== "#" ? idx.routes.color[r] : css(MODES[idx.routes.mode[r]].css);
+  // geometrie calcolate una volta per indice (forme delle linee, percorsi delle corse con le fermate agganciate)
+  const memo = new WeakMap();
+  const cached = (idx, key, fn) => { let m = memo.get(idx); if (!m) memo.set(idx, m = new Map()); let v = m.get(key); if (v === undefined) m.set(key, v = fn()); return v; };
+  /** Punti [lat, lon] della forma s (o, senza forma, delle fermate della corsa). Array condiviso: non modificarlo. */
   const shapeLatLngs = (idx, s, fallbackTrip) => {
-    if (s >= 0 && idx.shapes.start[s + 1] > idx.shapes.start[s]) {
+    if (s >= 0 && idx.shapes.start[s + 1] > idx.shapes.start[s]) return cached(idx, "s" + s, () => {
       const a = idx.shapes.start[s], b = idx.shapes.start[s + 1], out = new Array(b - a);
       for (let i = a; i < b; i++) out[i - a] = [idx.shapes.coords[i * 2], idx.shapes.coords[i * 2 + 1]];
       return out;
-    }
-    const { start, stop } = idx.tstops, out = [];
-    for (let k = start[fallbackTrip]; k < start[fallbackTrip + 1]; k++) out.push([idx.stops.lat[stop[k]], idx.stops.lon[stop[k]]]);
-    return out;
+    });
+    return cached(idx, "f" + fallbackTrip, () => {
+      const { start, stop } = idx.tstops, out = [];
+      for (let k = start[fallbackTrip]; k < start[fallbackTrip + 1]; k++) out.push([idx.stops.lat[stop[k]], idx.stops.lon[stop[k]]]);
+      return out;
+    });
+  };
+  const bearing = (a, b) => Math.atan2((b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180), b[0] - a[0]) * 180 / Math.PI;
+  /** Direzione di marcia lungo ll dal punto i, guardando ~40 m più avanti (senza superare j). */
+  const headingAt = (ll, i, j) => {
+    let k = i + 1; while (k < j && Geo.dist(ll[i][0], ll[i][1], ll[k][0], ll[k][1]) < 40) k++;
+    k = Math.min(k, ll.length - 1); return k > i ? bearing(ll[i], ll[k]) : 0;
   };
 
+  /** Tratto di una corsa percorribile entro il tempo: dalla fermata di salita c.boardStop all'ultima fermata entro res.end. */
+  function reachSegment(idx, res, c) {
+    const t = c.trip, { start, stop, time } = idx.tstops, k0 = start[t], dl = state.rt.delays ? state.rt.delays.delay[t] : 0;
+    let kFrom = -1, kLast = -1;
+    for (let k = k0; k < start[t + 1]; k++) {
+      if (kFrom < 0) { if (stop[k] === c.boardStop) kFrom = k; continue; }
+      if (time[k] + dl <= res.end) kLast = k; else break;
+    }
+    if (kFrom < 0 || kLast < 0) return null;
+    const p = tripPath(idx, t), seg = p.ll.slice(p.at[kFrom - k0], p.at[kLast - k0] + 1);
+    if (seg.length >= 2) return seg;
+    const out = []; for (let k = kFrom; k <= kLast; k++) out.push([idx.stops.lat[stop[k]], idx.stops.lon[stop[k]]]);
+    return out;
+  }
+
+  /**
+   * Linee raggiungibili, ognuna per intero: tutto il percorso tenue, marcato il tratto che si percorre entro il tempo
+   * (per direzione, dalla fermata di salita all'ultima fermata in tempo). Con una linea selezionata le altre diventano
+   * ancora più tenui e della selezionata si vedono le fermate (quelle intermedie solo da zoom Z.dots).
+   */
   function drawLines(idx, res, selected) {
     drawJourney(idx, null, null);
     if (!res) return;
-    const has = selected >= 0;
-    const ordered = [...res.routes.keys()].sort((a, b) => (a === selected) - (b === selected));
-    for (const r of ordered) {
+    const has = selected >= 0, surf = css("--surface");
+    const order = [...res.routes.keys()].sort((a, b) => (a === selected) - (b === selected));
+    for (const r of order) {                       // 1) percorsi interi, tenui
       const rs = idx.routeShapes[r]; if (!rs) continue;
       const sel = r === selected, color = routeColor(idx, r);
       rs.trips.forEach((t, i) => {
         const ll = shapeLatLngs(idx, rs.shapes[i], t); if (ll.length < 2) return;
-        if (sel) L.polyline(ll, { color: css("--surface"), weight: 10, opacity: 0.9, interactive: false }).addTo(linesLayer);
-        L.polyline(ll, { color, weight: sel ? 6 : 3, opacity: has ? (sel ? 1 : 0.14) : 0.55, interactive: false }).addTo(linesLayer);
+        L.polyline(ll, { color, weight: sel ? 4 : 2.5, opacity: sel ? 0.4 : has ? 0.07 : 0.22, interactive: false }).addTo(linesLayer);
       });
+    }
+    for (const r of order) {                       // 2) tratti percorribili entro il tempo
+      const info = res.routes.get(r), sel = r === selected, color = routeColor(idx, r);
+      for (const d in info.byDir) {
+        const seg = reachSegment(idx, res, info.byDir[d]); if (!seg || seg.length < 2) continue;
+        if (sel) L.polyline(seg, { color: surf, weight: 10, opacity: 0.9, interactive: false }).addTo(linesLayer);
+        L.polyline(seg, { color, weight: sel ? 6 : 3.5, opacity: sel ? 1 : has ? 0.16 : 0.85, interactive: false }).addTo(linesLayer);
+      }
     }
     if (has) {
       const info = res.routes.get(selected); if (!info) return;
@@ -1851,45 +2016,79 @@ const MapView = (() => {
         const c = info.byDir[d], { start, stop, time } = idx.tstops, dl = state.rt.delays ? state.rt.delays.delay[c.trip] : 0;
         for (let k = start[c.trip]; k < start[c.trip + 1]; k++) {
           const s = stop[k]; if (seen.has(s)) continue; seen.add(s);
-          const t = time[k] + dl, ok = t >= c.boardTime && t <= res.end;
+          const t = time[k] + dl, ok = t >= c.boardTime && t <= res.end, board = s === c.boardStop;
           L.circleMarker([idx.stops.lat[s], idx.stops.lon[s]], {
-            radius: s === c.boardStop ? 7 : 4.5, color, weight: 2.5, fillColor: s === c.boardStop || ok ? color : css("--surface"), fillOpacity: 1, opacity: ok || s === c.boardStop ? 1 : 0.5,
-          }).bindTooltip(`<span class="stop-dot-label">${esc(stopName(idx, s))}${ok ? " · " + Time.clock(idx.dayStart, t) : ""}</span>`, { direction: "top", offset: [0, -6] }).addTo(stopsLayer);
+            radius: board ? 7 : 4.5, color, weight: 2.5, fillColor: board || ok ? color : surf, fillOpacity: 1, opacity: ok || board ? 1 : 0.5,
+          }).bindTooltip(`<span class="stop-dot-label">${esc(stopName(idx, s))}${ok ? " · " + Time.clock(idx.dayStart, t) : ""}</span>`, { direction: "top", offset: [0, -6] }).addTo(board ? stopsLayer : dotsLayer);
         }
       }
     }
   }
 
-  /** Percorso completo di una corsa + posizione di ogni sua fermata lungo il percorso (indice in ll). */
+  /** Percorso completo di una corsa + posizione di ogni sua fermata lungo il percorso (indice in ll). In cache per corsa. */
   function tripPath(idx, t) {
-    const { start, stop } = idx.tstops, n = start[t + 1] - start[t], s = idx.trips.shape[t];
-    const ll = shapeLatLngs(idx, s, t), at = new Int32Array(n);
-    if (!(s >= 0 && idx.shapes.start[s + 1] > idx.shapes.start[s])) { for (let i = 0; i < n; i++) at[i] = i; return { ll, at }; }
-    // ogni fermata si aggancia al punto più vicino della forma, procedendo solo in avanti
-    let prev = 0;
-    for (let i = 0; i < n; i++) {
-      const la = idx.stops.lat[stop[start[t] + i]], lo = idx.stops.lon[stop[start[t] + i]];
-      let bi = prev, bd = Infinity;
-      for (let j = prev; j < ll.length; j++) {
-        const d = Core.Geo.dist(la, lo, ll[j][0], ll[j][1]);
-        if (d < bd) { bd = d; bi = j; } else if (bd < 50 && d > bd + 300) break;
+    return cached(idx, "p" + t, () => {
+      const { start, stop } = idx.tstops, n = start[t + 1] - start[t], s = idx.trips.shape[t];
+      const ll = shapeLatLngs(idx, s, t), at = new Int32Array(n);
+      if (!(s >= 0 && idx.shapes.start[s + 1] > idx.shapes.start[s])) { for (let i = 0; i < n; i++) at[i] = i; return { ll, at }; }
+      // ogni fermata si aggancia al punto più vicino della forma, procedendo solo in avanti
+      let prev = 0;
+      for (let i = 0; i < n; i++) {
+        const la = idx.stops.lat[stop[start[t] + i]], lo = idx.stops.lon[stop[start[t] + i]];
+        let bi = prev, bd = Infinity;
+        for (let j = prev; j < ll.length; j++) {
+          const d = Geo.dist(la, lo, ll[j][0], ll[j][1]);
+          if (d < bd) { bd = d; bi = j; } else if (bd < 50 && d > bd + 300) break;
+        }
+        at[i] = prev = bi;
       }
-      at[i] = prev = bi;
-    }
-    return { ll, at };
+      return { ll, at };
+    });
   }
 
-  /** Itinerario: percorsi completi dei mezzi attenuati, tratti usati evidenziati, fermate di salita/discesa con nome. */
+  /** Frecce lungo un tratto percorso in mezzo (convenzione: puntano dove va il mezzo), ogni ~400 m. */
+  function chevrons(seg, color) {
+    let total = 0; for (let i = 1; i < seg.length; i++) total += Geo.dist(seg[i - 1][0], seg[i - 1][1], seg[i][0], seg[i][1]);
+    let acc = 0, next = Math.min(250, total / 2);
+    if (total < 300) return;
+    for (let i = 1; i < seg.length && next < total - 120; i++) {
+      const a = seg[i - 1], b = seg[i], d = Geo.dist(a[0], a[1], b[0], b[1]);
+      while (d > 0 && acc + d >= next && next < total - 120) {
+        const f = (next - acc) / d;
+        L.marker([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], {
+          icon: L.divIcon({ className: "", html: `<span class="jchev" style="--jt-c:${color}">${arrowSvg(bearing(a, b))}</span>`, iconSize: [12, 12], iconAnchor: [6, 6] }),
+          interactive: false, keyboard: false, zIndexOffset: 300,
+        }).addTo(dotsLayer);
+        next += 400;
+      }
+      acc += d;
+    }
+  }
+
+  /**
+   * Itinerario: percorsi completi dei mezzi attenuati, tratti usati evidenziati con le frecce di direzione.
+   * Etichette fisse compatte: alla salita freccia (dove va il mezzo) + linea, alla discesa cerchio + linea;
+   * al tocco l'etichetta si apre con fermata e orario. Al cambio resta solo l'etichetta di salita.
+   */
   function drawJourney(idx, j, d) {
-    linesLayer.clearLayers(); stopsLayer.clearLayers(); journeyLayer.clearLayers();
+    linesLayer.clearLayers(); stopsLayer.clearLayers(); dotsLayer.clearLayers(); journeyLayer.clearLayers();
     if (dest) { map.removeLayer(dest); dest = null; }
     if (!d) return [];
     dest = L.marker([d.lat, d.lon], { interactive: false, keyboard: false, zIndexOffset: 900, icon: L.divIcon({ className: "", html: '<div class="dest"></div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(map);
     if (!j) return [[d.lat, d.lon]];
-    const pts = [[d.lat, d.lon]], ink = css("--ink"), surf = css("--surface");
+    const pts = [[d.lat, d.lon]], ink = css("--ink"), surf = css("--surface"), clock = (s) => Time.clock(idx.dayStart, s);
     const where = (p) => p.stop != null ? [idx.stops.lat[p.stop], idx.stops.lon[p.stop]] : [p.lat, p.lon];
-    const label = (txt, s, up, permanent) => L.circleMarker([idx.stops.lat[s], idx.stops.lon[s]], { radius: 7, color: surf, weight: 3, fillColor: ink, fillOpacity: 1, interactive: !permanent })
-      .bindTooltip(`<span class="stop-dot-label">${txt}</span>`, { permanent, direction: up ? "top" : "bottom", offset: [0, up ? -8 : 8], className: "j-tip" }).addTo(stopsLayer);
+    const dot = (s, tip) => {
+      const m = L.circleMarker([idx.stops.lat[s], idx.stops.lon[s]], { radius: 6, color: surf, weight: 3, fillColor: ink, fillOpacity: 1, interactive: !!tip });
+      if (tip) m.bindTooltip(`<span class="stop-dot-label">${tip}</span>`, { direction: "bottom", offset: [0, 8], className: "j-tip" });
+      m.addTo(stopsLayer);
+    };
+    const tag = (s, up, cls, color, inner, name) => {
+      const html = `<div class="jtag ${up ? "up" : "down"} ${cls}" style="--jt-c:${color}" title="${name}">${inner}<span class="nm">${name}</span></div>`;
+      const m = L.marker([idx.stops.lat[s], idx.stops.lon[s]], { icon: L.divIcon({ className: "", html, iconSize: null, iconAnchor: [0, 0] }), zIndexOffset: up ? 960 : 950, keyboard: false });
+      m.on("click", (e) => { L.DomEvent.stopPropagation(e); const el = m.getElement(); if (el && el.firstElementChild) el.firstElementChild.classList.toggle("open"); });
+      m.addTo(journeyLayer);
+    };
     const { start, stop, time } = idx.tstops, rides = j.legs.filter((l) => l.type === "ride");
     for (const l of j.legs) {
       if (l.type === "walk") {
@@ -1897,23 +2096,29 @@ const MapView = (() => {
         L.polyline(ll, { color: ink, weight: 4, opacity: l.estimated ? 0.45 : 0.8, dashArray: "1 9", lineCap: "round", lineJoin: "round", interactive: false }).addTo(journeyLayer);
         continue;
       }
-      const color = routeColor(idx, l.route), p = tripPath(idx, l.trip), k0 = start[l.trip];
+      const color = routeColor(idx, l.route), p = tripPath(idx, l.trip), k0 = start[l.trip], short = esc(idx.routes.short[l.route]);
       L.polyline(p.ll, { color, weight: 4, opacity: 0.3, interactive: false }).addTo(journeyLayer);
       const seg = p.ll.slice(p.at[l.kFrom - k0], p.at[l.kTo - k0] + 1);
       if (seg.length < 2) for (let k = l.kFrom; k <= l.kTo; k++) seg.push([idx.stops.lat[stop[k]], idx.stops.lon[stop[k]]]);
       L.polyline(seg, { color: surf, weight: 11, opacity: 0.95, interactive: false }).addTo(journeyLayer);
       L.polyline(seg, { color, weight: 7, opacity: 1, interactive: false }).addTo(journeyLayer);
+      chevrons(seg, color);
       pts.push(...seg);
       const dl = l.dep - time[l.kFrom];
       for (let k = l.kFrom + 1; k < l.kTo; k++) {
         L.circleMarker([idx.stops.lat[stop[k]], idx.stops.lon[stop[k]]], { radius: 4, color, weight: 2.5, fillColor: surf, fillOpacity: 1 })
-          .bindTooltip(`<span class="stop-dot-label">${esc(stopName(idx, stop[k]))} · ${Time.clock(idx.dayStart, time[k] + dl)}</span>`, { direction: "top", offset: [0, -5] }).addTo(stopsLayer);
+          .bindTooltip(`<span class="stop-dot-label">${esc(stopName(idx, stop[k]))} · ${clock(time[k] + dl)}</span>`, { direction: "top", offset: [0, -5] }).addTo(dotsLayer);
       }
       // al cambio l'etichetta fissa è solo quella di salita del mezzo successivo, per non sovrapporle
       const next = rides[rides.indexOf(l) + 1];
-      const transfer = next && Core.Geo.dist(idx.stops.lat[l.to], idx.stops.lon[l.to], idx.stops.lat[next.from], idx.stops.lon[next.from]) < 250;
-      label(`<b>${esc(idx.routes.short[l.route])}</b> sali · ${esc(stopName(idx, l.from))} · ${Time.clock(idx.dayStart, l.dep)}`, l.from, true, true);
-      label(`scendi · ${esc(stopName(idx, l.to))} · ${Time.clock(idx.dayStart, l.arr)}`, l.to, false, !transfer);
+      const transfer = next && Geo.dist(idx.stops.lat[l.to], idx.stops.lon[l.to], idx.stops.lat[next.from], idx.stops.lon[next.from]) < 250;
+      const onName = `Sali a ${esc(stopName(idx, l.from))} · ${clock(l.dep)}`, offName = `Scendi a ${esc(stopName(idx, l.to))} · ${clock(l.arr)}`;
+      // vicino alla partenza l'etichetta di salita va sotto la fermata, altrimenti la copre il PIN
+      const o = state.prefs.origin, underPin = Geo.dist(idx.stops.lat[l.from], idx.stops.lon[l.from], o.lat, o.lon) < 300;
+      dot(l.from, null);
+      tag(l.from, !underPin, "on", color, `<span class="jdir">${arrowSvg(headingAt(seg, 0, seg.length))}</span>${short}`, onName);
+      if (transfer) dot(l.to, `<b>${short}</b> ${offName}`);
+      else { dot(l.to, null); tag(l.to, false, "off", color, `<span class="stop-mark"></span>${short}`, offName); }
     }
     return pts;
   }
@@ -1921,28 +2126,60 @@ const MapView = (() => {
     if (pts.length) map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [40, 90], paddingBottomRight: [40, sheetOffsetPx() + 40], maxZoom: 16 });
   }
 
+  const vehTip = (idx, v) => {
+    const head = v.trip >= 0 ? soften(idx.trips.head[v.trip] || "") : "";
+    return `${esc(idx.routes.short[v.route])}${head ? " → " + esc(head) : ""}${v.scheduled ? " · posizione stimata dall'orario (nessun GPS)" : `${v.label ? " · mezzo " + esc(v.label) : ""}${v.ageSec ? " · " + v.ageSec + " s fa" : ""}`}`;
+  };
+  const selectFrom = (r) => (e) => { L.DomEvent.stopPropagation(e); UI.select(r); };
+  /** Mappa generale rimpicciolita: un pallino per gruppo di mezzi della stessa linea vicini sullo schermo (~70 px), col numero. */
+  function drawGroups(idx, list) {
+    const groups = [];
+    for (const v of list) {
+      const p = map.latLngToContainerPoint([v.lat, v.lon]);
+      let g = groups.find((x) => x.route === v.route && Math.abs(x.x - p.x) < 70 && Math.abs(x.y - p.y) < 70);
+      if (!g) groups.push(g = { route: v.route, x: p.x, y: p.y, lat: 0, lon: 0, n: 0, live: 0 });
+      g.lat += v.lat; g.lon += v.lon; g.n++; if (!v.scheduled) g.live++;
+    }
+    for (const g of groups) {
+      const short = esc(idx.routes.short[g.route]);
+      const html = `<div class="veh-group${g.live ? "" : " est"}" style="--veh-c:${routeColor(idx, g.route)}">${short}${g.n > 1 ? `<b>${g.n}</b>` : ""}</div>`;
+      L.marker([g.lat / g.n, g.lon / g.n], { icon: L.divIcon({ className: "", html, iconSize: null, iconAnchor: [0, 0] }), zIndexOffset: 500, keyboard: false })
+        .bindTooltip(`${short} · ${g.n} ${g.n === 1 ? "mezzo" : "mezzi"} in arrivo${g.live < g.n ? ` (${g.n - g.live} stimati dall'orario)` : ""}`)
+        .on("click", selectFrom(g.route)).addTo(vehLayer);
+    }
+  }
+
   /**
    * Mezzi sulla mappa (già scelti da UI.vehicles), solo quelli nell'area visibile. Nell'itinerario i mezzi
    * delle stesse linee ma di altre corse sono più tenui. Stimati dall'orario (v.scheduled): stile tratteggiato.
-   * Direzione della linea (direction_id): barretta in alto (d0) o in basso (d1).
+   * Direzione: il triangolo punta dove va il mezzo; barretta in alto (d0) o in basso (d1) = capolinea (direction_id).
+   * Zoom basso (< Z.vehFull): pallini per gruppo nella mappa generale (niente sotto Z.vehNone), piccoli cerchi altrimenti.
    */
   let lastVeh = null;
   function drawVehicles(idx, vehicles, res, selected, focus) {
     lastVeh = [idx, vehicles, res, selected, focus];
     vehLayer.clearLayers();
     if (!idx || !vehicles.length) return;
-    const view = map.getBounds().pad(0.15);
-    for (const v of vehicles) {
-      if (v.route < 0 || !view.contains([v.lat, v.lon])) continue;
+    const z = map.getZoom(), view = map.getBounds().pad(0.15);
+    const shown = vehicles.filter((v) => v.route >= 0 && view.contains([v.lat, v.lon]));
+    if (z < Z.vehFull) {
+      if (selected < 0 && !focus) { if (z >= Z.vehNone) drawGroups(idx, shown); return; }
+      // pieni nel colore della linea (le fermate sono cerchi vuoti); stimati: più chiari e bordo tratteggiato
+      const surf = css("--surface");
+      for (const v of shown) {
+        const color = routeColor(idx, v.route), dim = focus && !focus.trips.has(v.trip);
+        L.circleMarker([v.lat, v.lon], { radius: dim ? 4 : 5.5, weight: 2, color: v.scheduled ? color : surf, dashArray: v.scheduled ? "3 2" : null, fillColor: color, fillOpacity: v.scheduled ? 0.45 : 1, opacity: dim ? 0.6 : 1 })
+          .bindTooltip(vehTip(idx, v)).on("click", selectFrom(v.route)).addTo(vehLayer);
+      }
+      return;
+    }
+    for (const v of shown) {
       const color = routeColor(idx, v.route);
       const dim = focus && !focus.trips.has(v.trip) ? " dim" : "";
       const cls = "veh" + dim + (v.scheduled ? " est" : "") + (v.dir === 0 || v.dir === 1 ? " d" + v.dir : "");
-      const head = v.trip >= 0 ? soften(idx.trips.head[v.trip] || "") : "";
       const html = `<div class="${cls}" style="--veh-c:${color}">${esc(idx.routes.short[v.route])}${v.bearing != null ? `<span class="dir" style="transform:rotate(${Math.round(v.bearing)}deg)"></span>` : ""}</div>`;
       L.marker([v.lat, v.lon], { icon: L.divIcon({ className: "", html, iconSize: null, iconAnchor: [14, 10] }), zIndexOffset: dim ? 400 : 500, keyboard: false })
-        .bindTooltip(`${esc(idx.routes.short[v.route])}${head ? " → " + esc(head) : ""}${v.scheduled ? " · posizione stimata dall'orario (nessun GPS)" : `${v.label ? " · mezzo " + esc(v.label) : ""}${v.ageSec ? " · " + v.ageSec + " s fa" : ""}`}`)
-        .on("click", (e) => { L.DomEvent.stopPropagation(e); UI.select(v.route); })
-        .addTo(vehLayer);
+        .bindTooltip(vehTip(idx, v)).on("click", selectFrom(v.route)).addTo(vehLayer);
     }
   }
   map.on("moveend", () => { if (lastVeh) drawVehicles(...lastVeh); });
@@ -1986,28 +2223,49 @@ const UI = {
   init() {
     const p = state.prefs;
     // controlli
-    const inT = $("#in-time"), inW = $("#in-walk"), inP = $("#in-prefer");
-    inT.value = p.budgetMin; inW.value = p.maxWalk; inP.value = p.preferWalk;
-    const syncOut = () => { $("#out-time").textContent = inT.value + " min"; $("#out-walk").textContent = inW.value + " m"; $("#out-prefer").textContent = inP.value + " m"; };
-    syncOut();
-    inT.addEventListener("input", () => { p.budgetMin = +inT.value; syncOut(); UI.recompute(); });
-    inW.addEventListener("input", () => { p.maxWalk = +inW.value; syncOut(); UI.recompute(); });
-    inP.addEventListener("input", () => { p.preferWalk = +inP.value; syncOut(); UI.recompute(); });
+    /* Slider di viaggio. I due slider a piedi hanno la stessa scala 0–1000 m (stessa posizione = stessa distanza);
+       i valori non ammessi sono tratteggiati sulla barra e il cursore si ferma al limite:
+       - "A piedi, massimo per tratto" non scende sotto 100 m;
+       - "Preferisco camminare sotto" non supera il massimo a piedi e lo segue quando scende (Prefs.fix). */
+    const inT = $("#in-time"), inW = $("#in-walk"), inP = $("#in-prefer"), L = Prefs.LIMITS;
+    const track = (el, lo, hi, v, okFrom, okTo) => {
+      const pc = (x) => ((x - lo) / (hi - lo) * 100).toFixed(2) + "%";
+      el.style.setProperty("--a", pc(okFrom)); el.style.setProperty("--v", pc(v)); el.style.setProperty("--b", pc(okTo));
+    };
+    const sync = () => {
+      inT.value = p.budgetMin; inW.value = p.maxWalk; inP.value = p.preferWalk;
+      $("#out-time").textContent = p.budgetMin + " min"; $("#out-walk").textContent = p.maxWalk + " m"; $("#out-prefer").textContent = p.preferWalk + " m";
+      track(inT, +inT.min, +inT.max, p.budgetMin, +inT.min, +inT.max);
+      track(inW, +inW.min, +inW.max, p.maxWalk, L.maxWalk[0], +inW.max);
+      track(inP, +inP.min, +inP.max, p.preferWalk, +inP.min, p.maxWalk);
+      inW.setAttribute("aria-valuetext", `${p.maxWalk} metri (minimo ${L.maxWalk[0]})`);
+      inP.setAttribute("aria-valuetext", `${p.preferWalk} metri (al massimo ${p.maxWalk}, il limite a piedi)`);
+      UI.syncFilters();
+    };
+    sync();
+    inT.addEventListener("input", () => { p.budgetMin = +inT.value; Prefs.fix(p); sync(); UI.recompute(); });
+    inW.addEventListener("input", () => { p.maxWalk = +inW.value; Prefs.fix(p); sync(); UI.recompute(); });
+    inP.addEventListener("input", () => { p.preferWish = Math.min(+inP.value, p.maxWalk); Prefs.fix(p); sync(); UI.recompute(); });
     const chips = $("#mode-chips");
     MODES.forEach((m, i) => {
       const b = document.createElement("button");
       b.type = "button"; b.className = "chip"; b.setAttribute("aria-pressed", String(p.modes[i]));
       b.innerHTML = `<span class="sw" style="background:var(${m.css})"></span>${m.label}`;
-      b.addEventListener("click", () => { p.modes[i] = !p.modes[i]; b.setAttribute("aria-pressed", String(p.modes[i])); UI.recompute(); });
+      b.addEventListener("click", () => { p.modes[i] = !p.modes[i]; b.setAttribute("aria-pressed", String(p.modes[i])); UI.syncFilters(); UI.recompute(); });
       chips.appendChild(b);
     });
     const seg = $("#seg-transfers");
     const syncSeg = () => seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.v === p.maxRides)));
-    seg.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; p.maxRides = +b.dataset.v; syncSeg(); UI.recompute(); });
+    seg.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; p.maxRides = +b.dataset.v; syncSeg(); UI.syncFilters(); UI.recompute(); });
     syncSeg();
+    // impostazioni di viaggio: scheda flottante, resta aperta anche con un itinerario (ogni modifica lo ricalcola)
+    $("#btn-trip").addEventListener("click", () => UI.tripPanel($("#trip-panel").hidden));
+    $("#trip-close").addEventListener("click", () => UI.tripPanel(false));
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#trip-panel").hidden && $("#settings").hidden) UI.tripPanel(false); });
+    $("#hint").hidden = !!p.hintSeen;
 
     $("#btn-locate").addEventListener("click", UI.locate);
-    $("#lines").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) UI.select(+b.dataset.route); });
+    $("#view-main").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) UI.select(+b.dataset.route); });
     $("#view-detail").addEventListener("click", (e) => { if (e.target.closest("[data-back]")) UI.select(-1); });
     $("#view-journey").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) UI.select(+b.dataset.route); else if (e.target.closest("[data-back]")) UI.closeJourney(); });
     $("#banner-x").addEventListener("click", () => ($("#banner").hidden = true));
@@ -2044,7 +2302,6 @@ const UI = {
   },
   _compute() {
     const p = state.prefs; Prefs.save(p);
-    $("#sum-title").textContent = `Dove arrivi in ${p.budgetMin} min`;
     if (!state.idx) return;
     const t0 = performance.now();
     const res = Engine.isochrone(state.idx, {
@@ -2054,30 +2311,86 @@ const UI = {
     state.result = res;
     if (state.selected >= 0 && !res.routes.has(state.selected)) state.selected = -1;
     const field = state.walk ? Walk.field(state.walk, state.idx, res) : null;
-    MapView.iso.setData({ pts: field ? field.off : Engine.isoPoints(state.idx, res), field, g: state.walk && state.walk.g, nowSec: res.nowSec, budget: p.budgetMin * 60, cap: p.maxWalk, mps: walkMps() });
+    MapView.iso.setData({ pts: field ? field.off : Engine.isoPoints(state.idx, res), field, g: state.walk && state.walk.g, nowSec: res.nowSec, budget: p.budgetMin * 60, cap: p.maxWalk, mps: walkMps(), bands: !!p.isoBands });
     UI.drawMap();
     UI.renderList(); UI.renderDetail(); UI.renderJourney(); UI.renderLegend();
     const nR = res.routes.size;
-    $("#sum-sub").textContent = (nR ? `${nR} ${nR === 1 ? "linea" : "linee"} · ${res.reachedStops} fermate · ` : "Nessun mezzo utile · ") + (state.walk ? "a piedi lungo le strade" : "a piedi stimato");
+    $("#sum-sub").textContent = `Area in ${p.budgetMin} min · ` + (nR ? `${nR} ${nR === 1 ? "linea" : "linee"} · ${res.reachedStops} fermate` : "nessun mezzo utile") + (state.walk ? "" : " · a piedi stimato");
   },
+  /** Legenda delle fasce, solo se l'area è disegnata a fasce (prefs.isoBands). */
   renderLegend() {
-    const b = state.prefs.budgetMin, a = Math.round(b / 3), c = Math.round(b * 2 / 3);
-    $("#legend").innerHTML = `<span><i style="background:var(--band-1)"></i>0–${a}′</span><span><i style="background:var(--band-2)"></i>${a}–${c}′</span><span><i style="background:var(--band-3)"></i>${c}–${b}′</span>`;
+    const el = $("#legend"), b = state.prefs.budgetMin, a = Math.round(b / 3), c = Math.round(b * 2 / 3);
+    el.hidden = !state.prefs.isoBands;
+    el.innerHTML = state.prefs.isoBands ? `<span><i style="background:var(--band-1)"></i>0–${a}′</span><span><i style="background:var(--band-2)"></i>${a}–${c}′</span><span><i style="background:var(--band-3)"></i>${c}–${b}′</span>` : "";
   },
+  /** Pallino delle impostazioni di viaggio: minuti nel badge, riassunto completo nell'etichetta (es. "20 min · 400 m a piedi · max 1 cambio"). */
+  syncFilters() {
+    const p = state.prefs, on = MODES.filter((m, i) => p.modes[i]).map((m) => m.label.toLowerCase()), off = MODES.filter((m, i) => !p.modes[i]).map((m) => m.label.toLowerCase());
+    const modes = !off.length ? "" : !on.length ? " · nessun mezzo" : off.length <= on.length ? " · senza " + off.join(", ") : " · solo " + on.join(", ");
+    const sum = `${p.budgetMin} min · ${p.maxWalk} m a piedi · ${["nessun cambio", "max 1 cambio", "max 2 cambi"][p.maxRides - 1]}${modes}`;
+    $("#trip-badge").textContent = p.budgetMin + "′";
+    $("#btn-trip").setAttribute("aria-label", "Impostazioni di viaggio: " + sum); $("#btn-trip").title = sum;
+  },
+  /**
+   * Apre/chiude la scheda delle impostazioni di viaggio. Aperta, il pannello in basso scende al minimo (su telefono)
+   * per lasciare vista la mappa; il risultato aggiornato è in cima alla scheda. Chiusa, il pannello torna com'era.
+   */
+  _sheetBefore: null,
+  tripPanel(open) {
+    if (open === !$("#trip-panel").hidden) return;
+    $("#trip-panel").hidden = !open; $("#btn-trip").setAttribute("aria-expanded", String(open));
+    if (open) { UI._sheetBefore = Sheet.state; Sheet.set("min"); UI.renderTripRes(); }
+    else { if (UI._sheetBefore && Sheet.state === "min") Sheet.set(UI._sheetBefore); UI._sheetBefore = null; }
+  },
+  /** Riga di risultato nella scheda di viaggio: l'itinerario scelto (arrivo, linee, a piedi) oppure l'area. Lampeggia se cambia. */
+  renderTripRes() {
+    const el = $("#trip-res"), idx = state.idx, res = state.result, j = state.journey; if (!el || $("#trip-panel").hidden) return;
+    let html;
+    if (!idx || !res) html = "Calcolo…";
+    else if (state.view === "journey" && state.dest) {
+      const rides = j ? j.legs.filter((l) => l.type === "ride") : [];
+      html = !j ? "<b>Destinazione non raggiungibile</b> con queste impostazioni"
+        : `<b>Arrivi alle ${Time.clock(idx.dayStart, j.arrive)}</b> · ${fmtDur(j.arrive - res.nowSec)} · ` +
+          (rides.length ? rides.map((l) => `<span class="badge ${MODES[idx.routes.mode[l.route]].key}" style="background:${MapView.routeColor(idx, l.route)}">${esc(idx.routes.short[l.route])}</span>`).join("›") : "solo a piedi") +
+          ` · ${fmtDist(j.walk)} a piedi`;
+    } else html = `<b>Area in ${state.prefs.budgetMin} min</b> · ${res.routes.size} linee · ${res.reachedStops} fermate`;
+    if (UI._tripRes === html) return;
+    const first = UI._tripRes == null; UI._tripRes = html; el.innerHTML = html;
+    if (!first) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+  },
+  /** Il suggerimento sui gesti sparisce dopo il primo uso. */
+  hintDone() { if (!state.prefs.hintSeen) { state.prefs.hintSeen = true; Prefs.save(state.prefs); $("#hint").hidden = true; } },
+  /**
+   * "In arrivo vicino a te": per linea e direzione, il primo passaggio che si prende a piedi (senza cambi)
+   * da una fermata raggiungibile, con la fermata e il passaggio successivo. Le linee raggiungibili solo con
+   * un cambio restano sotto come badge.
+   */
   renderList() {
-    const idx = state.idx, res = state.result, ul = $("#lines");
-    if (!res) { ul.innerHTML = ""; return; }
-    const items = [...res.routes.values()].sort((x, y) => x.best.round - y.best.round || x.best.boardTime - y.best.boardTime);
-    $("#lines-title").textContent = items.length ? "Linee utili adesso" : "Linee utili";
-    if (!items.length) { ul.innerHTML = `<li class="empty">Nessuna linea raggiungibile con questi filtri. Prova ad aumentare il tempo o la distanza a piedi.</li>`; return; }
-    ul.innerHTML = items.map((e) => {
-      const r = e.route, m = idx.routes.mode[r], b = e.best, heads = Object.values(e.byDir).map((c) => soften(idx.trips.head[c.trip] || "")).filter(Boolean);
-      const wait = b.boardTime - res.nowSec;
-      const where = b.round === 1 ? `${esc(stopName(idx, b.boardStop))} · ${Math.round(b.walk)} m a piedi` : `con ${b.round - 1} ${b.round === 2 ? "cambio" : "cambi"} · da ${esc(stopName(idx, b.boardStop))}`;
+    const idx = state.idx, res = state.result, ul = $("#lines"), via = $("#via");
+    if (!res) { ul.innerHTML = ""; via.hidden = true; return; }
+    const near = [], far = [];
+    for (const e of res.routes.values()) {
+      const dirs = Object.values(e.byDir).filter((c) => c.round === 1);
+      for (const c of dirs) near.push({ e, c });
+      if (!dirs.length) far.push(e);
+    }
+    near.sort((x, y) => x.c.boardTime - y.c.boardTime);
+    far.sort((x, y) => x.best.round - y.best.round || x.best.boardTime - y.best.boardTime);
+    const badge = (r) => `<button type="button" class="badge ${MODES[idx.routes.mode[r]].key}" data-route="${r}" aria-label="Linea ${esc(idx.routes.short[r])}" style="background:${MapView.routeColor(idx, r)}">${esc(idx.routes.short[r])}</button>`;
+    via.hidden = !far.length;
+    via.innerHTML = far.length ? `<span>${far.every((e) => e.best.round === 2) ? "Con un cambio" : "Con cambi"}:</span>${far.map((e) => badge(e.route)).join("")}` : "";
+    if (!near.length) {
+      ul.innerHTML = `<li class="empty">${far.length ? `Nessun passaggio da prendere a piedi entro ${state.prefs.budgetMin} min.` : "Nessuna linea raggiungibile con questi filtri. Prova ad aumentare il tempo o la distanza a piedi."}</li>`;
+      return;
+    }
+    ul.innerHTML = near.map(({ e, c }) => {
+      const r = e.route, m = idx.routes.mode[r], live = !!(state.rt.delays && state.rt.delays.known[c.trip]);
+      const head = soften(idx.trips.head[c.trip] || "") || idx.routes.long[r] || MODES[m].label;
+      const after = Engine.nextDepartures(idx, r, idx.trips.dir[c.trip], c.boardStop, c.boardTime, 1, state.rt.delays)[0];
       return `<li><button class="line-item" type="button" data-route="${r}">
         <span class="badge ${MODES[m].key}" style="background:${MapView.routeColor(idx, r)}">${esc(idx.routes.short[r])}</span>
-        <span class="li-main"><span class="t">${heads.length ? esc(heads.join(" ⇄ ")) : esc(idx.routes.long[r] || MODES[m].label)}</span><span class="s">${where}</span></span>
-        <span class="li-when">${b.round === 1 ? fmtMin(wait) : Time.clock(idx.dayStart, b.boardTime)}${e.live ? '<span class="live-tag">live</span>' : ""}<small>${e.reached} fermate</small></span>
+        <span class="li-main"><span class="t">→ ${esc(head)}</span><span class="s">${esc(stopName(idx, c.boardStop))} · ${fmtDist(c.walk || 0)} a piedi</span></span>
+        <span class="li-when">${fmtMin(c.boardTime - res.nowSec)}${live ? '<span class="live-tag">live</span>' : ""}${after ? `<small>poi ${fmtMin(after.dep - res.nowSec)}</small>` : ""}</span>
       </button></li>`;
     }).join("");
   },
@@ -2126,17 +2439,18 @@ const UI = {
   tapPoint(lat, lon) {
     if (!state.idx || !state.result) return;
     if (!Engine.journey(state.idx, state.result, lat, lon)) { toast(`Fuori dall'area raggiungibile in ${state.prefs.budgetMin} min`); return; }
-    state.dest = { lat, lon }; state.selected = -1; state.journeyFit = true;
+    state.dest = { lat, lon }; state.selected = -1; state.journeyFit = true; UI.hintDone();
     UI.show("journey");
-    if (Sheet.state === "min") Sheet.set("mid");
+    if (Sheet.state === "min" && $("#trip-panel").hidden) Sheet.set("mid");
     UI.drawMap(); UI.renderJourney(); UI.renderDetail();
   },
   closeJourney() { state.dest = null; state.journey = null; UI.show("main"); UI.drawMap(); UI.renderJourney(); },
   renderJourney() {
+    UI.renderTripRes();
     const box = $("#view-journey"), idx = state.idx, res = state.result, j = state.journey;
     if (state.view !== "journey" || !idx || !res || !state.dest) { box.innerHTML = ""; return; }
     const clock = (s) => Time.clock(idx.dayStart, s);
-    const head = `<div class="detail-head"><button class="back" type="button" data-back>← Linee</button><h3>Come arrivarci</h3></div>`;
+    const head = `<div class="detail-head"><button class="back" type="button" data-back>← Indietro</button><h3>Come arrivarci</h3></div>`;
     if (!j) {
       box.innerHTML = head + `<div class="board-card"><span class="big">Non più raggiungibile</span><span class="meta">Con i filtri attuali questo punto non si raggiunge entro ${state.prefs.budgetMin} min. Aumenta il tempo o la distanza a piedi, oppure tocca un altro punto.</span></div>`;
       return;
@@ -2149,7 +2463,9 @@ const UI = {
       <span class="big">Arrivi alle ${clock(j.arrive)} · ${fmtDur(j.arrive - res.nowSec)}</span>
       <span class="meta">${rides.length ? `Esci entro le ${clock(j.leave)}${leaveIn >= 60 ? ` (tra ${fmtDur(leaveIn)})` : ""} · ${rides.length === 1 ? "1 mezzo, nessun cambio" : `${rides.length} mezzi, ${rides.length - 1} ${rides.length === 2 ? "cambio" : "cambi"}`}` : "Ci arrivi a piedi"} · ${fmtDist(j.walk)} a piedi</span>
       ${rides.length ? `<span class="j-chain">${rides.map((l) => badge(l.route)).join('<span class="j-arrow" aria-hidden="true">›</span>')}</span>` : ""}
-    </div><ol class="itin">`;
+    </div>
+    ${rides.length ? `<p class="jkey"><span class="k">Sulla mappa: ${arrowSvg(45)} dove va il mezzo (sali)</span><span class="k"><span class="stop-mark"></span> dove scendi</span><span class="k">Tocca un'etichetta per il nome della fermata</span></p>` : ""}
+    <ol class="itin">`;
     const { stop, time } = idx.tstops;
     let t = rides.length ? j.leave : res.nowSec;
     j.legs.forEach((l, i) => {
@@ -2208,7 +2524,7 @@ const UI = {
     const wait = b.boardTime - res.nowSec;
     box.innerHTML = `
       <div class="detail-head">
-        <button class="back" type="button" data-back>← Linee</button>
+        <button class="back" type="button" data-back>← Indietro</button>
         <span class="badge ${MODES[m].key}" style="background:${color}">${esc(idx.routes.short[r])}</span>
         <h3>${esc(idx.routes.long[r] || MODES[m].label)}</h3>
       </div>
@@ -2377,6 +2693,7 @@ const Settings = {
     $("#in-speed").addEventListener("change", (e) => { state.prefs.walkKmh = +e.target.value; UI.recompute(); });
     $("#in-veh-live").addEventListener("change", (e) => { state.prefs.vehLive = e.target.checked; Prefs.save(state.prefs); UI.drawMap(); });
     $("#in-veh-est").addEventListener("change", (e) => { state.prefs.vehScheduled = e.target.checked; Prefs.save(state.prefs); UI.drawMap(); });
+    $("#in-iso-bands").addEventListener("change", (e) => { state.prefs.isoBands = e.target.checked; UI.recompute(true); });
     $("#in-walk-radius").addEventListener("change", (e) => { state.prefs.walkRadiusKm = +e.target.value; Prefs.save(state.prefs); });
     $("#btn-walk-add").addEventListener("click", () => { const o = state.prefs.origin; WalkAreas.add(o.lat, o.lon, state.prefs.walkRadiusKm || 6, false); });
     $("#btn-walk-refresh").addEventListener("click", () => WalkAreas.refresh());
@@ -2389,7 +2706,7 @@ const Settings = {
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#settings").hidden) Settings.close(); });
   },
   async open() {
-    $("#in-proxy").value = state.prefs.proxy; Settings.renderProxy(); $("#in-carto").value = state.prefs.cartoKey || ""; $("#in-demo").checked = !!state.prefs.demo; $("#in-veh-live").checked = state.prefs.vehLive !== false; $("#in-veh-est").checked = state.prefs.vehScheduled !== false; $("#in-speed").value = String(state.prefs.walkKmh);
+    $("#in-proxy").value = state.prefs.proxy; Settings.renderProxy(); $("#in-carto").value = state.prefs.cartoKey || ""; $("#in-demo").checked = !!state.prefs.demo; $("#in-veh-live").checked = state.prefs.vehLive !== false; $("#in-veh-est").checked = state.prefs.vehScheduled !== false; $("#in-iso-bands").checked = !!state.prefs.isoBands;$("#in-speed").value = String(state.prefs.walkKmh);
     $("#test-result").textContent = "";
     $("#in-walk-radius").value = String(state.prefs.walkRadiusKm || 6); $("#in-walk-base").value = state.prefs.walkBase || "";
     Settings.renderAreas();

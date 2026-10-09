@@ -6,17 +6,19 @@ Stato: **da fare** (concordato con l'utente) · **proposta** (idea non ancora ap
 
 ## 1. Interfaccia mobile: meno informazioni a schermo
 
-Su telefono la schermata è troppo carica. Proposte del 9 ottobre 2026, in ordine di utilità. Consigliato iniziare da 1.1 e 1.2.
+Su telefono la schermata era troppo carica. Proposte del 9 ottobre 2026, tutte fatte lo stesso giorno (verificate su localhost con dati reali, tema chiaro e scuro, 390×844).
 
 | # | Idea | Stato |
 |---|---|---|
-| 1.1 | **Percorsi delle linee solo quando servono.** Oggi la mappa generale disegna i percorsi di tutte le linee utili: è la cosa che pesa di più. Mostrarli solo per la linea selezionata e per l'itinerario; nella mappa generale restano area raggiungibile, fermate vicine e mezzi in arrivo. | proposta |
-| 1.2 | **Controlli in un pannello "Filtri" richiudibile.** Gli slider occupano mezzo schermo. Nel pannello basso restano titolo e lista; un riassunto ("20 min · 400 m · max 1 cambio") apre i controlli. | proposta |
-| 1.3 | **Meno dettagli a zoom basso.** Sotto un certo zoom niente mezzi, oppure un pallino per linea con il numero di mezzi. | proposta |
-| 1.4 | **Etichette fisse dell'itinerario più compatte.** Solo "↑ 13" / "↓ 13", nome della fermata al tocco. | proposta |
-| 1.5 | **Area raggiungibile più leggera.** Un solo colore invece di tre fasce (fasce come opzione). | proposta |
-| 1.6 | **"In arrivo vicino a te" al posto di "Linee utili".** Prossimi passaggi alle fermate raggiungibili a piedi, es. "13 → Gran Madre tra 2 min, Castello". | proposta |
+| 1.1 | **Linee raggiungibili per intero, tenui fuori dalla zona raggiungibile** (scelta dell'utente al posto di "solo quando servono"): ogni linea è disegnata tutta, tenue; marcato solo il tratto che si percorre entro il tempo (per direzione, dalla fermata di salita all'ultima fermata in tempo: `reachSegment`). Con una linea selezionata le altre diventano ancora più tenui. | fatto (9/10/2026) |
+| 1.2 | **Impostazioni di viaggio in un pallino flottante** sotto l'ingranaggio (che ora apre i dati e le impostazioni generali), con i minuti nel badge. La scheda resta aperta anche con un itinerario, così si vede come cambia modificando cambi, tratto a piedi, ecc.: in cima la riga col risultato aggiornato (arrivo, linee, metri a piedi), che lampeggia quando cambia; il pannello in basso scende al minimo mentre è aperta. Il pannello in basso mostra solo "In arrivo vicino a te" o l'itinerario. Il suggerimento sui gesti sparisce dopo il primo uso (`prefs.hintSeen`). | fatto (9/10/2026) |
+| 1.3 | **Meno dettagli a zoom basso** (`Z` in `MapView`): sotto 14 nella mappa generale un pallino per gruppo di mezzi della stessa linea (entro ~70 px) col numero, sotto 12 nessun mezzo; con linea selezionata o itinerario piccoli cerchi pieni (stimati: chiari e tratteggiati). Sotto 13 spariscono fermate intermedie e frecce (`dotsLayer`). | fatto (9/10/2026) |
+| 1.4 | **Etichette compatte dell'itinerario con convenzione di direzione:** alla salita freccia + linea (la freccia punta dove va il mezzo, calcolata dalla forma della corsa), alla discesa cerchio + linea (bordo); al tocco l'etichetta si apre con "Sali a … · ora". Frecce anche lungo il tratto percorso (ogni ~400 m). Legenda sotto il riepilogo dell'itinerario. Vicino alla partenza l'etichetta di salita va sotto la fermata (il PIN la coprirebbe). | fatto (9/10/2026) |
+| 1.5 | **Area raggiungibile a un solo colore**; tre fasce come opzione in Impostazioni (`prefs.isoBands`, legenda solo con le fasce). | fatto (9/10/2026) |
+| 1.6 | **"In arrivo vicino a te"** al posto di "Linee utili": per linea e direzione il primo passaggio prendibile a piedi (senza cambi), es. "52 → Val Salice · Porta Nuova · 90 m a piedi · 3 min, poi 18 min". Le linee raggiungibili solo con cambi restano sotto come badge ("Con un cambio: …"). | fatto (9/10/2026) |
 | 1.7 | Mezzi sulla mappa generale solo se stanno per passare da una fermata raggiungibile a piedi; tutti i mezzi solo con la linea selezionata; interruttori separati per mezzi live e stimati; barretta di direzione nel riquadro del mezzo. | fatto (9/10/2026) |
+| 1.9 | **Slider a piedi coerenti:** "Preferisco camminare sotto" non supera mai "A piedi, massimo per tratto" e lo segue quando scende (torna al valore scelto se il massimo risale); stessa scala 0–1000 m per entrambi, valori non ammessi tratteggiati, cursore bloccato al limite; preferenze salvate non valide corrette all'avvio (`Prefs.fix`). Verificati tutti i casi (limiti, passi, valori corrotti, trascinamento oltre il limite). | fatto (9/10/2026) |
+| 1.8 | Convenzione di direzione anche sui riquadri dei mezzi: oggi il triangolo orbitante punta già dove va il mezzo, ma la forma è diversa dalla freccia delle etichette; valutare di usare la stessa freccia (e se la barretta d0/d1 serve ancora). | proposta |
 
 ## 2. Funzioni
 
@@ -44,6 +46,16 @@ Su telefono la schermata è troppo carica. Proposte del 9 ottobre 2026, in ordin
 | 3.5 | **Ritardo per fermata** invece di un solo ritardo per corsa (preso dal primo aggiornamento utile). | proposta |
 | 3.6 | **Stime dei mezzi per linee con GPS parziale:** oggi le posizioni stimate si aggiungono nella mappa generale solo per le linee senza nessun mezzo live (per evitare doppioni). | proposta |
 | 3.7 | **PWA installabile** (manifest + service worker, uso offline). | proposta (vedi domanda 4.4) |
+| 3.8 | **Fluidità su mobile (prossima sessione, priorità dell'utente).** Punti caldi noti, da misurare prima di toccare: vedi sotto. | da fare |
+
+### 3.8 Punti caldi per la fluidità (da misurare sul telefono)
+
+- `UI._compute` rifà tutto a ogni movimento degli slider (attesa 120 ms) e a ogni aggiornamento live (30 s): `Engine.isochrone` + `Walk.field` + ridisegno completo di `IsoLayer` + `drawLines` (ricrea tutte le polilinee: per linea percorso intero + tratto raggiungibile, ~4 per linea) + `drawVehicles` + `innerHTML` delle liste. Idee: separare cosa cambia (live → solo mezzi e orari), un solo layer canvas per le linee invece di centinaia di `L.polyline`, aggiornare i marker invece di ricrearli.
+- `IsoLayer._draw` ridisegna l'intero canvas a ogni `moveend` scorrendo tutti i nodi raggiunti (~160.000 con area di 6 km) e lo nasconde durante lo zoom.
+- Mezzi: un `L.divIcon` (nodo DOM) per mezzo, ricreati a ogni `moveend`; `Realtime.scheduled` scorre tutte le ~15.000 corse a ogni `drawMap`.
+- Lista "In arrivo": `Engine.nextDepartures` per riga (scorre le corse della linea).
+- Cache già presenti: forme e percorsi delle corse con fermate agganciate (`cached` in `MapView`, per indice).
+- `GtfsStatic.build` e `Walk.build`/`attach` sul thread principale (3.2). Sfondo MapLibre (WebGL) + Leaflet: valutare il costo sul telefono.
 
 ## 4. Domande aperte per l'utente
 
@@ -66,3 +78,4 @@ Su telefono la schermata è troppo carica. Proposte del 9 ottobre 2026, in ordin
 - 7/10/2026 — CLAUDE.md; verifica con dati GTT reali; itinerario al tocco, partenza con pressione prolungata.
 - 7–8/10/2026 — Percorsi a piedi lungo le strade (tessere OSM, aree scaricabili e gestibili); pubblicazione su GitHub Pages con workflow.
 - 9/10/2026 — Proxy predefinito dal secret `HOPON_PROXY` (`config.js`); soglia "Preferisco camminare sotto" e vantaggio minimo per un mezzo in più; nessun tratto a piedi oltre il massimo; demo attorno alla partenza; avvio anche se IndexedDB non risponde; server locale aperto alla rete; più mezzi sulla mappa (stimati per le linee senza GPS) e poi filtrati per la mappa generale, con direzione.
+- 9/10/2026 — Interfaccia mobile alleggerita (§1.1–1.6): linee intere tenui fuori dalla zona raggiungibile, filtri richiudibili, meno dettagli a zoom basso, etichette compatte dell'itinerario con freccia di direzione, area a un colore, lista "In arrivo vicino a te".
