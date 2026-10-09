@@ -129,6 +129,14 @@ button { cursor: pointer; }
 }
 .veh.dim { opacity: .45; transform: scale(.85); }
 .veh.est { background: var(--surface); color: var(--veh-c); border: 2px dashed var(--veh-c); height: 22px; }
+/* direzione della linea: barretta in alto (andata, direction_id 0) o in basso (ritorno, 1) */
+.veh.d0, .veh.d1 { height: 23px; --dir-c: rgba(255,255,255,.95); }
+.veh.est.d0, .veh.est.d1 { --dir-c: var(--veh-c); }
+.veh.d0 { box-shadow: inset 0 4px 0 var(--dir-c), 0 0 0 2px var(--surface), var(--shadow); padding-top: 3px; }
+.veh.d1 { box-shadow: inset 0 -4px 0 var(--dir-c), 0 0 0 2px var(--surface), var(--shadow); padding-bottom: 3px; }
+.dir-key { display: inline-block; width: 22px; height: 14px; border-radius: 4px; background: var(--line-c, var(--ink)); vertical-align: -2px; margin-right: 6px; }
+.dir-key.d0 { box-shadow: inset 0 3px 0 rgba(255,255,255,.95); }
+.dir-key.d1 { box-shadow: inset 0 -3px 0 rgba(255,255,255,.95); }
 .stop-dot-label { font: 600 12px/1.2 var(--f-body); }
 #map { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .dest { width: 22px; height: 22px; border-radius: 50%; background: var(--ink); border: 5px solid var(--surface); box-shadow: 0 0 0 2px var(--ink), var(--shadow); }
@@ -423,8 +431,9 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
     </div>
     <p id="test-result" class="mono"></p>
 
-    <label class="switch"><span>Mezzi di tutte le linee sulla mappa (altrimenti solo linee utili vicine)</span><input type="checkbox" id="in-veh-all"></label>
-    <label class="switch"><span>Stima dall'orario i mezzi senza GPS (es. metro)</span><input type="checkbox" id="in-veh-est"></label>
+    <label class="switch"><span>Mostra i mezzi in tempo reale (GPS)</span><input type="checkbox" id="in-veh-live"></label>
+    <label class="switch"><span>Mostra i mezzi stimati dall'orario (senza GPS, es. metro)</span><input type="checkbox" id="in-veh-est"></label>
+    <p>Sulla mappa compaiono solo i mezzi che stanno per passare dalle fermate raggiungibili a piedi; toccando una linea vedi tutti i suoi mezzi. La barretta in alto o in basso nel riquadro indica la direzione.</p>
     <label class="switch"><span>Modalità demo (linee inventate)</span><input type="checkbox" id="in-demo"></label>
 
     <label class="field"><span>Passo a piedi</span>
@@ -1048,7 +1057,8 @@ const Realtime = {
       let trip = -1, route = -1;
       if (v.trip && v.trip.tripId && byId.has(v.trip.tripId)) { trip = byId.get(v.trip.tripId)[0]; route = idx.trips.route[trip]; }
       else if (v.trip && v.trip.routeId && byRoute.has(v.trip.routeId)) route = byRoute.get(v.trip.routeId);
-      out.push({ trip, route, lat: v.pos.lat, lon: v.pos.lon, bearing: v.pos.bearing, ageSec: Math.max(0, Math.round(age)), label: v.vehicle && (v.vehicle.label || v.vehicle.id) || "" });
+      const dir = trip >= 0 ? idx.trips.dir[trip] : v.trip && v.trip.dir != null ? v.trip.dir & 1 : -1;
+      out.push({ trip, route, dir, lat: v.pos.lat, lon: v.pos.lon, bearing: v.pos.bearing, ageSec: Math.max(0, Math.round(age)), label: v.vehicle && (v.vehicle.label || v.vehicle.id) || "" });
     }
     return out;
   },
@@ -1061,20 +1071,44 @@ const Realtime = {
     const s0 = stop[k], s1 = stop[k + 1];
     const la = lat[s0] + (lat[s1] - lat[s0]) * f, lo = lon[s0] + (lon[s1] - lon[s0]) * f;
     const bearing = Math.atan2((lon[s1] - lon[s0]) * Math.cos(la * Math.PI / 180), lat[s1] - lat[s0]) * 180 / Math.PI;
-    return { trip: t, route: idx.trips.route[t], lat: la, lon: lo, bearing, ageSec: 0, label: "" };
+    return { trip: t, route: idx.trips.route[t], dir: idx.trips.dir[t], lat: la, lon: lo, bearing, ageSec: 0, label: "" };
   },
   /**
-   * Posizioni stimate dall'orario (ritardo applicato se noto) per le linee che nel feed non hanno nessun mezzo
-   * (es. la metro, che GTT non pubblica). Solo linee senza mezzi live, così lo stesso mezzo non compare due volte.
+   * Posizioni stimate dall'orario (ritardo applicato se noto) dei mezzi che il feed non mostra.
+   * - routes null: solo le linee senza nessun mezzo live (es. la metro, che GTT non pubblica);
+   * - routes = Set di linee (linea selezionata, itinerario): ogni corsa in servizio non coperta da un mezzo live,
+   *   scartando le stime a meno di 400 m da un mezzo live della stessa linea senza corsa associata (probabile doppione).
    */
-  scheduled(idx, nowSec, live, rt) {
-    const liveRoutes = new Set(live.map((v) => v.route)), out = [];
+  scheduled(idx, nowSec, live, rt, routes = null) {
+    const liveRoutes = new Set(live.map((v) => v.route)), liveTrips = new Set(live.map((v) => v.trip)), out = [];
+    const noTrip = live.filter((v) => v.trip < 0);
     for (let t = 0; t < idx.trips.id.length; t++) {
-      if (liveRoutes.has(idx.trips.route[t]) || (rt && rt.cancelled && rt.cancelled[t])) continue;
-      const v = Realtime.interpolate(idx, t, nowSec - (rt && rt.delay ? rt.delay[t] : 0));
-      if (v) { v.scheduled = true; out.push(v); }
+      const r = idx.trips.route[t];
+      if (routes ? !routes.has(r) || liveTrips.has(t) : liveRoutes.has(r)) continue;
+      if (rt && rt.cancelled && rt.cancelled[t]) continue;
+      const v = Realtime.interpolate(idx, t, nowSec - (rt && rt.delay ? rt.delay[t] : 0)); if (!v) continue;
+      if (routes && noTrip.some((x) => x.route === r && Geo.dist(x.lat, x.lon, v.lat, v.lon) < 400)) continue;
+      v.scheduled = true; out.push(v);
     }
     return out;
+  },
+  /**
+   * Mezzi che interessano dalla partenza: devono ancora passare da una fermata raggiungibile a piedi
+   * (res.accessDist), in tempo per arrivarci camminando ed entro il tempo a disposizione.
+   * Mezzi live senza corsa associata: tenuti se la loro linea si prende a piedi e sono entro 1,5 km.
+   */
+  approaching(idx, res, vehicles, rt) {
+    const acc = res.accessDist, mps = res.opts.walkMps, { start, stop, time } = idx.tstops, o = res.opts;
+    return vehicles.filter((v) => {
+      if (v.trip < 0) { const e = res.routes.get(v.route); return !!e && e.best.round === 1 && Geo.dist(o.lat, o.lon, v.lat, v.lon) < 1500; }
+      const dl = rt && rt.delay ? rt.delay[v.trip] : 0;
+      for (let k = start[v.trip]; k < start[v.trip + 1]; k++) {
+        const d = acc.get(stop[k]); if (d === undefined) continue;
+        const at = time[k] + dl;
+        if (at >= res.nowSec + d / mps - 30 && at <= res.end) return true;
+      }
+      return false;
+    });
   },
   alerts(idx, feed) {
     if (!feed) return [];
@@ -1558,7 +1592,7 @@ const $ = (s) => document.querySelector(s);
 const Prefs = {
   key: "hopon.prefs.v1",
   load() {
-    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null, walkRadiusKm: 6, walkBase: "", preferWalk: 200, vehAll: true, vehScheduled: true };
+    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null, walkRadiusKm: 6, walkBase: "", preferWalk: 200, vehLive: true, vehScheduled: true };
     try { return Object.assign(d, JSON.parse(localStorage.getItem(this.key) || "{}")); } catch { return d; }
   },
   save(p) { try { localStorage.setItem(this.key, JSON.stringify(p)); } catch {} },
@@ -1888,27 +1922,25 @@ const MapView = (() => {
   }
 
   /**
-   * Mezzi sulla mappa. Vista principale: tutti quelli nell'area visibile (prefs.vehAll), più tenui quelli
-   * di linee non utili; oppure solo le linee utili entro 2,5 km. Linea selezionata o itinerario: solo quelle linee.
-   * I mezzi stimati dall'orario (v.scheduled) hanno uno stile vuoto.
+   * Mezzi sulla mappa (già scelti da UI.vehicles), solo quelli nell'area visibile. Nell'itinerario i mezzi
+   * delle stesse linee ma di altre corse sono più tenui. Stimati dall'orario (v.scheduled): stile tratteggiato.
+   * Direzione della linea (direction_id): barretta in alto (d0) o in basso (d1).
    */
   let lastVeh = null;
   function drawVehicles(idx, vehicles, res, selected, focus) {
     lastVeh = [idx, vehicles, res, selected, focus];
     vehLayer.clearLayers();
     if (!idx || !vehicles.length) return;
-    const o = state.prefs.origin, near = 2500, view = map.getBounds().pad(0.15);
+    const view = map.getBounds().pad(0.15);
     for (const v of vehicles) {
       if (v.route < 0 || !view.contains([v.lat, v.lon])) continue;
-      const isSel = selected >= 0 && v.route === selected;
-      const useful = res && res.routes.has(v.route);
-      if (focus ? !focus.routes.has(v.route) : selected >= 0 ? !isSel : !(state.prefs.vehAll || (useful && Core.Geo.dist(o.lat, o.lon, v.lat, v.lon) < near))) continue;
       const color = routeColor(idx, v.route);
-      const dim = (focus ? !focus.trips.has(v.trip) : selected < 0 && !useful) ? " dim" : "";
-      const cls = "veh" + dim + (v.scheduled ? " est" : "");
+      const dim = focus && !focus.trips.has(v.trip) ? " dim" : "";
+      const cls = "veh" + dim + (v.scheduled ? " est" : "") + (v.dir === 0 || v.dir === 1 ? " d" + v.dir : "");
+      const head = v.trip >= 0 ? soften(idx.trips.head[v.trip] || "") : "";
       const html = `<div class="${cls}" style="--veh-c:${color}">${esc(idx.routes.short[v.route])}${v.bearing != null ? `<span class="dir" style="transform:rotate(${Math.round(v.bearing)}deg)"></span>` : ""}</div>`;
       L.marker([v.lat, v.lon], { icon: L.divIcon({ className: "", html, iconSize: null, iconAnchor: [14, 10] }), zIndexOffset: dim ? 400 : 500, keyboard: false })
-        .bindTooltip(`${esc(idx.routes.short[v.route])}${v.scheduled ? " · posizione stimata dall'orario (nessun GPS)" : `${v.label ? " · mezzo " + esc(v.label) : ""}${v.ageSec ? " · " + v.ageSec + " s fa" : ""}`}`)
+        .bindTooltip(`${esc(idx.routes.short[v.route])}${head ? " → " + esc(head) : ""}${v.scheduled ? " · posizione stimata dall'orario (nessun GPS)" : `${v.label ? " · mezzo " + esc(v.label) : ""}${v.ageSec ? " · " + v.ageSec + " s fa" : ""}`}`)
         .on("click", (e) => { L.DomEvent.stopPropagation(e); UI.select(v.route); })
         .addTo(vehLayer);
     }
@@ -2055,11 +2087,17 @@ const UI = {
     $("#sheet-body").scrollTop = 0;
   },
   /** Mappa secondo la vista: itinerario, oppure linee utili (con l'eventuale linea selezionata). */
-  /** Mezzi da disegnare: live, più quelli stimati dall'orario per le linee senza GPS (non in demo). */
-  vehicles() {
-    const live = state.rt.vehicles;
-    if (!state.prefs.vehScheduled || !state.idx || state.idx.source === "demo") return live;
-    return live.concat(Realtime.scheduled(state.idx, nowSec(), live, state.rt.delays));
+  /**
+   * Mezzi da disegnare (live e/o stimati dall'orario, secondo le impostazioni):
+   * - linea selezionata o itinerario (routes): tutti i mezzi di quelle linee, stimati compresi;
+   * - mappa generale: solo quelli che stanno per passare da una fermata raggiungibile a piedi.
+   */
+  vehicles(routes) {
+    const p = state.prefs, idx = state.idx, res = state.result; if (!idx || !res) return [];
+    const all = state.rt.vehicles, live = p.vehLive ? all : [];
+    const est = p.vehScheduled && idx.source !== "demo" ? Realtime.scheduled(idx, nowSec(), all, state.rt.delays, routes || null) : [];
+    const list = live.concat(est);
+    return routes ? list.filter((v) => routes.has(v.route)) : Realtime.approaching(idx, res, list, state.rt.delays);
   },
   drawMap() {
     const idx = state.idx, res = state.result; if (!idx || !res) return;
@@ -2067,11 +2105,12 @@ const UI = {
       state.journey = Engine.journey(idx, res, state.dest.lat, state.dest.lon);
       const pts = MapView.drawJourney(idx, state.journey, state.dest);
       const rides = state.journey ? state.journey.legs.filter((l) => l.type === "ride") : [];
-      MapView.drawVehicles(idx, UI.vehicles(), res, -1, { routes: new Set(rides.map((l) => l.route)), trips: new Set(rides.map((l) => l.trip)) });
+      const focus = { routes: new Set(rides.map((l) => l.route)), trips: new Set(rides.map((l) => l.trip)) };
+      MapView.drawVehicles(idx, UI.vehicles(focus.routes), res, -1, focus);
       if (state.journeyFit) { state.journeyFit = false; pts.push([state.prefs.origin.lat, state.prefs.origin.lon]); MapView.fitPoints(pts); }
     } else {
       MapView.drawLines(idx, res, state.selected);
-      MapView.drawVehicles(idx, UI.vehicles(), res, state.selected);
+      MapView.drawVehicles(idx, UI.vehicles(state.selected >= 0 ? new Set([state.selected]) : null), res, state.selected);
     }
   },
   select(r) {
@@ -2125,7 +2164,7 @@ const UI = {
       if (wait >= 60) html += `<li class="it it-wait"><span class="it-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span><div class="it-body">Attesa ${fmtDur(wait)}</div></li>`;
       const color = MapView.routeColor(idx, l.route), m = idx.routes.mode[l.route];
       const next = Engine.nextDepartures(idx, l.route, idx.trips.dir[l.trip], l.from, l.dep, 2, state.rt.delays);
-      const veh = state.rt.vehicles.find((v) => v.trip === l.trip);
+      const veh = state.prefs.vehLive ? state.rt.vehicles.find((v) => v.trip === l.trip) : null;
       const dl = l.dep - time[l.kFrom];
       let rows = "";
       for (let k = l.kFrom + 1; k < l.kTo; k++) rows += `<li><span class="node"></span><span>${esc(stopName(idx, stop[k]))}</span><time>${clock(time[k] + dl)}</time></li>`;
@@ -2164,7 +2203,7 @@ const UI = {
         const inside = t <= res.end;
         rows += `<li class="${s === c.boardStop ? "board" : ""} ${inside ? "" : "out"}"><span class="node"></span><span>${esc(stopName(idx, s))}</span><time>${Time.clock(idx.dayStart, t)}</time></li>`;
       }
-      return `<div class="section-title">Verso ${esc(soften(idx.trips.head[c.trip] || "") || "capolinea")}</div><ul class="stops" style="--line-c:${color}"><span class="rail"></span>${rows}</ul>`;
+      return `<div class="section-title" style="--line-c:${color}"><span class="dir-key d${idx.trips.dir[c.trip] & 1}" aria-hidden="true"></span>Verso ${esc(soften(idx.trips.head[c.trip] || "") || "capolinea")}</div><ul class="stops" style="--line-c:${color}"><span class="rail"></span>${rows}</ul>`;
     }).join("");
     const wait = b.boardTime - res.nowSec;
     box.innerHTML = `
@@ -2336,7 +2375,7 @@ const Settings = {
     });
     $("#in-demo").addEventListener("change", async (e) => { state.prefs.demo = e.target.checked; Prefs.save(state.prefs); Settings.close(); await Boot.start(); });
     $("#in-speed").addEventListener("change", (e) => { state.prefs.walkKmh = +e.target.value; UI.recompute(); });
-    $("#in-veh-all").addEventListener("change", (e) => { state.prefs.vehAll = e.target.checked; Prefs.save(state.prefs); UI.drawMap(); });
+    $("#in-veh-live").addEventListener("change", (e) => { state.prefs.vehLive = e.target.checked; Prefs.save(state.prefs); UI.drawMap(); });
     $("#in-veh-est").addEventListener("change", (e) => { state.prefs.vehScheduled = e.target.checked; Prefs.save(state.prefs); UI.drawMap(); });
     $("#in-walk-radius").addEventListener("change", (e) => { state.prefs.walkRadiusKm = +e.target.value; Prefs.save(state.prefs); });
     $("#btn-walk-add").addEventListener("click", () => { const o = state.prefs.origin; WalkAreas.add(o.lat, o.lon, state.prefs.walkRadiusKm || 6, false); });
@@ -2350,7 +2389,7 @@ const Settings = {
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#settings").hidden) Settings.close(); });
   },
   async open() {
-    $("#in-proxy").value = state.prefs.proxy; Settings.renderProxy(); $("#in-carto").value = state.prefs.cartoKey || ""; $("#in-demo").checked = !!state.prefs.demo; $("#in-veh-all").checked = state.prefs.vehAll !== false; $("#in-veh-est").checked = state.prefs.vehScheduled !== false; $("#in-speed").value = String(state.prefs.walkKmh);
+    $("#in-proxy").value = state.prefs.proxy; Settings.renderProxy(); $("#in-carto").value = state.prefs.cartoKey || ""; $("#in-demo").checked = !!state.prefs.demo; $("#in-veh-live").checked = state.prefs.vehLive !== false; $("#in-veh-est").checked = state.prefs.vehScheduled !== false; $("#in-speed").value = String(state.prefs.walkKmh);
     $("#test-result").textContent = "";
     $("#in-walk-radius").value = String(state.prefs.walkRadiusKm || 6); $("#in-walk-base").value = state.prefs.walkBase || "";
     Settings.renderAreas();

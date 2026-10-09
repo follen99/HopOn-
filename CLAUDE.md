@@ -2,7 +2,9 @@
 
 App web mobile per Torino: data una partenza (GPS o PIN sulla mappa) mostra **dove si arriva in X minuti con i mezzi GTT**, usando orari GTFS e feed GTFS-RT in tempo reale. Uso personale, con prospettiva di diventare un progetto vero.
 
-Storia, requisiti completi, domande aperte e idee di feature: **[HANDOFF.md](HANDOFF.md)**. Leggerlo prima di lavori non banali.
+Idee, lavori da fare, domande aperte per l'utente e limiti noti: **[UPGRADES.md](UPGRADES.md)**. Leggerlo all'inizio di una nuova sessione e aggiornarlo quando si chiude o si aggiunge qualcosa. (Il vecchio HANDOFF.md è stato eliminato dall'utente; il contenuto ancora valido è in UPGRADES.md.)
+
+Requisiti originali dell'utente: partenza da GPS o PIN; area raggiungibile entro un tempo; controlli per tempo, mezzi (metro/tram/bus/treni), distanza massima a piedi; linee e fermate utili sulla mappa con la linea toccata evidenziata; dati reali dai feed con cache; ottimizzata per mobile; nome "Hop on!".
 
 ## Lingua e preferenze dell'utente
 
@@ -76,11 +78,13 @@ Per l'interfaccia con i percorsi a piedi serve http: generare `walk/` (es. da BB
   - Zip GTT ~15,8 MB (stop_times.txt ~84 MB decompresso). `GtfsStatic.build` ~3,8 s su PC (sul telefono sarà molto di più → Web Worker), indice ~16 MB. 7.054 fermate, 215 linee, ~15.000 corse/giorno, ~430.000 connessioni. Isocrona 10–15 ms.
   - `routes.txt`: metro `METROU` con route_type 1 (classificata correttamente), 10 tram, 204 bus, **nessun treno** → la casella "Treni" oggi non ha effetto. CSV con tutti i campi tra virgolette.
   - `direction_id`, `trip_headsign` e `shapes.txt` presenti. `stop_sequence` sempre 1..n contiguo (usato da `Realtime._schedAt`).
-  - Posizioni mezzi: tutte con `bearing` e `timestamp`, età tipica ~2 min; ~83% con `trip_id`, tutti con `route_id`, tutti presenti nello zip. **La metro non c'è mai** (né posizioni né trip_update) e molte linee mancano: il 9 ottobre alle 10:50 il feed aveva 316 mezzi su 64 linee contro 517 corse in servizio su 119 linee (a volte il feed arriva vuoto). Per le linee senza nessun mezzo live l'app mostra la posizione stimata dall'orario (`Realtime.scheduled`, stile tratteggiato, `prefs.vehScheduled`); `prefs.vehAll` mostra i mezzi di tutte le linee nell'area visibile (quelli di linee non utili più tenui).
+  - Posizioni mezzi: tutte con `bearing` e `timestamp`, età tipica ~2 min; ~83% con `trip_id`, tutti con `route_id`, tutti presenti nello zip. **La metro non c'è mai** (né posizioni né trip_update) e molte linee mancano: il 9 ottobre alle 10:50 il feed aveva 316 mezzi su 64 linee contro 517 corse in servizio su 119 linee (a volte il feed arriva vuoto). Mezzi sulla mappa (`UI.vehicles`): live (`prefs.vehLive`) e stimati dall'orario (`Realtime.scheduled`, tratteggiati, `prefs.vehScheduled`). Mappa generale: solo quelli che devono ancora passare da una fermata raggiungibile a piedi, in tempo e entro il tempo a disposizione (`Realtime.approaching`), con stime solo per le linee senza nessun mezzo live; linea selezionata o itinerario: tutti i mezzi di quelle linee, con stime per le corse non coperte (doppioni scartati entro 400 m). Barretta in alto/basso nel riquadro = `direction_id` 0/1, legenda nei titoli "Verso …" del dettaglio linea.
   - trip_update: nessun `delay` a livello corsa; per fermata mix di `delay` e `time`, solo `stop_sequence` (mai `stop_id`). Tutti i `trip_id` presenti nello zip.
   - Avvisi: ~150, quasi tutti collegati a linee; quelli con solo `agency_id` (es. "Linee 13 e 15 deviate") non vengono associati alle linee.
 - Rete pedonale (7 ottobre 2026): estratto BBBike Torino → 175 tessere, 3,8 MB; area di 6 km attorno a piazza Castello ≈ 1,3 MB, ~160.000 nodi, costruzione grafo ~0,4 s + aggancio fermate ~0,5 s su PC; isocrona con strade ~10 ms, area colorata ~30 ms. Tratti a piedi tipicamente 1,2–1,4 × la linea d'aria.
 - Verificati nel browser (localhost) con dati reali: itinerari, cambi, pressione prolungata, aree a piedi (download, eliminazione, persistenza), proxy del sito (presente, assente, non raggiungibile). Estratto Geofabrik completo: 833 tessere, 14,7 MB, ~50 s.
 - Preferenza per camminare, su ~500 itinerari reali: corse medie 1,31 → 1,22, "navette" di 1–2 fermate prima di un altro mezzo 43 → 28, arrivo medio invariato (+6 s).
 - Non verificati: prestazioni sul telefono.
-- Prossimi passi (HANDOFF.md §8): GitHub Pages → prova dell'app sul telefono → `GtfsStatic.build` in un Web Worker → migrazione a progetto Vite (`src/core`, `src/app`, `worker/proxy.js`, `test/`) → domande aperte e modalità radar.
+- **Pubblicazione (9 ottobre 2026):** sito online su https://follen99.github.io/HopOn-/ (Pages con Source = GitHub Actions), ma con la versione del commit `4632bd7`; in locale ci sono commit non ancora inviati e modifiche non salvate (mezzi filtrati, direzione). Il secret `HOPON_PROXY` va creato su GitHub perché il sito abbia il proxy predefinito.
+- L'utente prova anche dal telefono tramite il server locale (`http://<IP del PC>:8080/hop-on.html`).
+- Prossimi passi: vedi [UPGRADES.md](UPGRADES.md) (prima l'alleggerimento dell'interfaccia mobile, §1).
