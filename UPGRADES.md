@@ -53,6 +53,7 @@ Su telefono la schermata era troppo carica. Proposte del 9 ottobre 2026, tutte f
 | 3.5 | **Ritardo per fermata** invece di un solo ritardo per corsa (preso dal primo aggiornamento utile). | proposta |
 | 3.6 | **Stime dei mezzi per linee con GPS parziale:** oggi le posizioni stimate si aggiungono nella mappa generale solo per le linee senza nessun mezzo live (per evitare doppioni). | proposta |
 | 3.7 | **PWA installabile** (manifest + service worker, uso offline). | proposta (vedi domanda 4.4) |
+| 3.9 | **Raccolta feedback**: questionario Google Form generato da `feedback/hopon-feedback.gs`, con analisi deterministica che produce un backlog ordinato (codici = sezioni di questo file). Da collegare anche dentro l'app (link nelle impostazioni). | fatto lo script (9/10/2026); non ancora lanciato (escluso dal post su r/Torino per scelta dell'utente) |
 | 3.8 | **Fluidità su mobile (prossima sessione, priorità dell'utente).** Punti caldi noti, da misurare prima di toccare: vedi sotto. | da fare |
 
 ### 3.8 Punti caldi per la fluidità (da misurare sul telefono)

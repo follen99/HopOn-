@@ -17,6 +17,8 @@ L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto
 - [tools/build-walk-tiles.mjs](tools/build-walk-tiles.mjs): Node senza dipendenze, legge un `.osm.pbf` (decoder PBF interno, due passaggi: relazioni poi nodi/vie) e il GTFS GTT, scrive le tessere della rete pedonale in `walk/` (gitignored).
 - [.github/workflows/pages.yml](.github/workflows/pages.yml): pubblica su GitHub Pages (`hop-on.html` → `index.html` + `walk/` generata da Geofabrik nord-ovest + `config.js`); istruzioni per l'utente in [README.md](README.md). Pages deve avere Source = GitHub Actions.
 - [tools/make-config.mjs](tools/make-config.mjs): scrive `config.js` (`window.HOPON_CONFIG = {proxy}`) dal secret/variabile `HOPON_PROXY` o dal file `.env` (entrambi `config.js` e `.env` sono gitignored). Senza proxy valido non scrive nulla.
+- [feedback/hopon-feedback.gs](feedback/hopon-feedback.gs): Google Apps Script che crea il Google Form di feedback (`creaForm`) e analizza le risposte con regole fisse (`analizza` → fogli Analisi, Backlog, Testi liberi: NPS, SUS, opportunity score, Kano, codifica dei testi, utenti quotidiani pesati il doppio); metodo in [feedback/README.md](feedback/README.md). Codici delle voci = sezioni di UPGRADES.md.
+- [promo/reddit-r-torino.md](promo/reddit-r-torino.md): post di lancio per r/Torino.
 - `.claude/launch.json`: server locale `python -m http.server 8080 --bind 0.0.0.0` (nome `hopon`), raggiungibile anche dalla rete locale (es. telefono su `http://<IP del PC>:8080/hop-on.html`; lì niente GPS perché non è https).
 
 `hop-on.html` è diviso in blocchi che diventeranno moduli:
