@@ -32,7 +32,12 @@ Su telefono la schermata era troppo carica. Proposte del 9 ottobre 2026, tutte f
 | 2.4 | **Affidabilità delle linee:** corse fantasma, ritardi medi, mezzi in coda (bunching). Richiede di registrare i feed nel tempo. | proposta |
 | 2.5 | **Bike sharing e monopattini** per primo e ultimo tratto. | proposta |
 | 2.6 | **Partenza a un orario futuro** ("parto alle 18:30"). Oggi si parte sempre da adesso. | proposta (vedi domanda 4.2) |
-| 2.7 | **Ricerca di un indirizzo** per sapere se rientra nell'area e come arrivarci. | proposta (vedi domanda 4.3) |
+| 2.7 | **Ricerca di una destinazione** (indirizzi, negozi, luoghi con Photon/OpenStreetMap + fermate GTT dall'indice, ricerche recenti) con itinerario. **Fuori dall'area: "fix"** (`Engine.fixes`): più tempo, più strada a piedi per tratto, più cambi, mezzi esclusi, tutto a piedi o combinazioni, ognuno col suo itinerario; il migliore per costo "percepito" in evidenza, gli altri visibili sulla mappa con un tocco; "Applica" aggiorna le impostazioni di viaggio, "Ripristina" le riporta com'erano. Anche il tocco sulla mappa fuori area mostra ora i fix invece del solo messaggio. Tempo massimo portato da 60 a 90 min. | fatto (9/10/2026) |
+| 2.11 | **Tema chiaro / scuro / automatico** nelle impostazioni (applicato prima del primo disegno, mappa compresa). | fatto (9/10/2026) |
+| 2.12 | **Lingue: italiano e inglese**, automatica dal browser o scelta nelle impostazioni, cambio al volo. Tutti i testi in `script#i18n` (plurali, numeri e date per lingua); una nuova lingua = un nuovo blocco nel dizionario. | fatto (9/10/2026) |
+| 2.13 | **Nome del punto toccato** (geocodifica inversa con Photon `/reverse`): oggi un punto toccato sulla mappa si chiama solo "Come arrivarci". | proposta |
+| 2.14 | **Fix "parti più tardi"**: per mete fuori area a volte basta aspettare la corsa successiva (legato a 2.6). | proposta |
+| 2.15 | **Altre lingue** (francese, tedesco, spagnolo…) per i turisti: basta tradurre il blocco `en` di `LOCALES`. | proposta |
 | 2.8 | **Treni regionali SFM/Trenitalia** dal GTFS della Regione Piemonte: oggi la casella "Treni" non ha effetto perché lo zip GTT non contiene treni. | proposta (vedi domanda 4.5) |
 | 2.9 | **Avvisi GTT senza linea associata** (es. "Linee 13 e 15 deviate", collegati solo all'azienda): associarli alle linee leggendo i numeri nel titolo. | proposta |
 | 2.10 | **Proxy che accetta solo richieste dal sito GitHub Pages** (controllo dell'header Origin nel worker), visto che l'indirizzo in `config.js` è pubblico. Il worker va poi ricopiato su Cloudflare. | proposta |
@@ -42,7 +47,7 @@ Su telefono la schermata era troppo carica. Proposte del 9 ottobre 2026, tutte f
 | # | Lavoro | Stato |
 |---|---|---|
 | 3.1 | **Provare l'app sul telefono** con il sito pubblicato (prestazioni di caricamento orari e rete pedonale, GPS). | da fare |
-| 3.2 | **`GtfsStatic.build` in un Web Worker:** oggi gira sul thread principale (~3,8 s su PC, molto di più su telefono) e blocca l'interfaccia. Valutare lo stesso per `Walk.build` + `Walk.attach` (~1 s su PC). | da fare |
+| 3.2 | **`GtfsStatic.build` in un Web Worker:** oggi gira sul thread principale (~3,8 s su PC, molto di più su telefono) e blocca l'interfaccia. Valutare lo stesso per `Walk.build` + `Walk.attach` (~1 s su PC) e per `Engine.fixes` (6–19 isocrone, 100–580 ms su PC: sul telefono potrebbe bloccare per 1–2 s). | da fare |
 | 3.3 | **Test automatici** in `test/` per decoder GTFS-RT, parser GTFS, motore, rete pedonale (oggi solo script di prova non salvati). | da fare |
 | 3.4 | **Migrazione a progetto (es. Vite)**: `src/core/*`, `src/app/*`, `src/styles/tokens.css`, `worker/proxy.js`, `test/`. | proposta |
 | 3.5 | **Ritardo per fermata** invece di un solo ritardo per corsa (preso dal primo aggiornamento utile). | proposta |
@@ -56,6 +61,7 @@ Su telefono la schermata era troppo carica. Proposte del 9 ottobre 2026, tutte f
 - `IsoLayer._draw` ridisegna l'intero canvas a ogni `moveend` scorrendo tutti i nodi raggiunti (~160.000 con area di 6 km) e lo nasconde durante lo zoom.
 - Mezzi: un `L.divIcon` (nodo DOM) per mezzo, ricreati a ogni `moveend`; `Realtime.scheduled` scorre tutte le ~15.000 corse a ogni `drawMap`.
 - Lista "In arrivo": `Engine.nextDepartures` per riga (scorre le corse della linea).
+- Fix per mete fuori area (`Engine.fixes`): fino a ~20 isocrone, alcune con 90 min di tempo (le più care). Idee: Web Worker, sonde col tempo più corto prima di quella a 90 min, una sola isocrona "a ritroso" dalla meta.
 - Cache già presenti: forme e percorsi delle corse con fermate agganciate (`cached` in `MapView`, per indice).
 - `GtfsStatic.build` e `Walk.build`/`attach` sul thread principale (3.2). Sfondo MapLibre (WebGL) + Leaflet: valutare il costo sul telefono.
 
@@ -63,7 +69,7 @@ Su telefono la schermata era troppo carica. Proposte del 9 ottobre 2026, tutte f
 
 1. Il limite "a piedi" deve restare uno solo (accesso, cambi e tratto finale) o servono valori separati? Esiste ora anche la soglia "Preferisco camminare sotto".
 2. Serve solo "parto adesso" o anche un orario futuro?
-3. Serve cercare un indirizzo?
+3. ~~Serve cercare un indirizzo?~~ Sì: fatto (2.7).
 4. Piattaforma finale: sito GitHub Pages, PWA installabile o app nativa?
 5. Includere i treni regionali SFM/Trenitalia?
 
@@ -74,6 +80,8 @@ Su telefono la schermata era troppo carica. Proposte del 9 ottobre 2026, tutte f
 - Le preferenze (soglia a piedi, vantaggio minimo di 2 minuti per un mezzo in più) valgono anche per l'area disegnata, che può risultare un po' più piccola di quella teoricamente raggiungibile.
 - In http (server locale raggiungibile dal telefono) il GPS non funziona: serve https.
 - L'indirizzo del proxy è pubblico in `config.js` sul sito ed è rimasto nella storia git (commit `c68ac2a`, `4632bd7`).
+- Ricerca di indirizzi: istanza pubblica di Photon (komoot), gratuita ma senza garanzie di disponibilità e da usare con moderazione (per questo attesa di 280 ms e richiesta precedente annullata). Le fermate GTT coprono quasi tutta la provincia, quindi il filtro per area è largo: l'ordine conta su pertinenza + distanza dalla partenza. Photon non ha l'italiano come lingua: in italiano si usano i nomi locali (`lang=default`).
+- I fix si fermano a 90 min, 1000 m a piedi per tratto e 2 cambi (i limiti degli slider), più "tutto a piedi" fino a 30 min.
 
 ## 6. Fatto
 
@@ -81,3 +89,4 @@ Su telefono la schermata era troppo carica. Proposte del 9 ottobre 2026, tutte f
 - 7–8/10/2026 — Percorsi a piedi lungo le strade (tessere OSM, aree scaricabili e gestibili); pubblicazione su GitHub Pages con workflow.
 - 9/10/2026 — Proxy predefinito dal secret `HOPON_PROXY` (`config.js`); soglia "Preferisco camminare sotto" e vantaggio minimo per un mezzo in più; nessun tratto a piedi oltre il massimo; demo attorno alla partenza; avvio anche se IndexedDB non risponde; server locale aperto alla rete; più mezzi sulla mappa (stimati per le linee senza GPS) e poi filtrati per la mappa generale, con direzione.
 - 9/10/2026 — Interfaccia mobile alleggerita (§1.1–1.6): linee intere tenui fuori dalla zona raggiungibile, filtri richiudibili, meno dettagli a zoom basso, etichette compatte dell'itinerario con freccia di direzione, area a un colore, lista "In arrivo vicino a te".
+- 9/10/2026 — Ricerca della destinazione con fix per le mete fuori area (§2.7), tema chiaro/scuro/automatico (§2.11), italiano e inglese (§2.12); README riscritto per chi usa l'app.

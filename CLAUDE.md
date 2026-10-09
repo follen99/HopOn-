@@ -25,12 +25,14 @@ L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto
 |---|---|
 | commento in `<head>` | mappa del file e URL dei dati |
 | `<style>` | design token su `:root` (tema chiaro/scuro) + componenti |
-| `<body>` | mappa, barra in alto, pallino e scheda delle impostazioni di viaggio, pannello inferiore trascinabile, modale impostazioni |
+| script in `<head>` | applica subito il tema salvato (niente lampo di colori) |
+| `<body>` | mappa, barra in alto con la ricerca, pallino e scheda delle impostazioni di viaggio, pannello inferiore trascinabile, modale impostazioni; testi con `data-i18n*` |
+| `script#i18n` | testi dell'interfaccia in tutte le lingue (`LOCALES`) e il motore `I18n` (`t`, `apply`, `set`, `missing`); subito dopo il markup, così la lingua giusta c'è al primo disegno |
 | `script#proxy-worker-src` | codice del Cloudflare Worker (proxy CORS), come testo copiabile dalle Impostazioni |
 | `script#core` | logica pura **senza DOM**, esposta come `Core` e via `module.exports` |
 | `script#app` | tutto ciò che usa il browser (IIFE) |
 
-`Core` contiene: `Config`, `MODES`/`modeFromRouteType`, `Geo`, `Time`, `Csv`, `GtfsRt` (decoder protobuf scritto a mano), `GtfsStatic` + `finalizeIndex` (zip GTFS → indice a array tipizzati), `Demo`, `Realtime`, `Walk` (rete pedonale), `Shape` (fermate agganciate alla forma della corsa), `Engine` (isocrona con Connection Scan Algorithm a round).
+`Core` contiene: `Config`, `MODES`/`modeFromRouteType`, `Geo`, `Time`, `Csv`, `GtfsRt` (decoder protobuf scritto a mano), `GtfsStatic` + `finalizeIndex` (zip GTFS → indice a array tipizzati), `Demo`, `Realtime`, `Walk` (rete pedonale), `Shape` (fermate agganciate alla forma della corsa), `Engine` (isocrona con Connection Scan Algorithm a round, itinerari, fix).
 
 **Tratti evidenziati da fermata a fermata:** `Shape.snapStops` proietta ogni fermata sul punto più vicino del tratto giusto della forma (posizione continua `j + u`, non il vertice più vicino). Per ogni fermata considera come candidati i minimi locali della distanza e sceglie, con programmazione dinamica, la sequenza che avanza sempre lungo la forma con la distanza totale minima, così le forme che passano due volte nella stessa via non sbagliano passaggio. `ridePath` in `MapView` usa `Shape.sub` più un raccordo fino al punto esatto di ogni fermata: lo usano l'itinerario e i tratti raggiungibili. Sui 1.245 schemi di fermate reali (9 ottobre 2026): distanza fermata–inizio/fine del tratto con mediana 57 m e massimo 7,8 km prima, mediana 6 m e 99% entro 23 m dopo; ~0,1 ms per schema.
 
@@ -42,11 +44,21 @@ L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto
 - tempo: almeno 2 min se tutte le corse hanno orari in tempo reale, 4 min se programmati, più 2 min per ogni mezzo oltre il primo;
 - strada: almeno max(300 m, 40% del percorso a piedi).
 
-Nella vista itinerario si mostra allora il percorso a piedi con il riquadro "Meglio a piedi", con il pulsante "Vedi con i mezzi" (`state.rideAnyway`); altrimenti c'è una riga di confronto "Tutto a piedi: …".
+Nella vista itinerario si mostra allora il percorso a piedi con il riquadro "Meglio a piedi", con il pulsante "Vedi con i mezzi" (`state.rideAnyway`); altrimenti c'è una riga di confronto "Tutto a piedi: …". `Engine.plan(idx, res, lat, lon, rideAnyway, walkOnly)` mette insieme `journey` + `walkAdvice` e restituisce l'itinerario da mostrare (`best`); `Engine.walkTrip` è il percorso tutto a piedi.
+
+**Destinazione fuori area: i "fix" (`Engine.fixes`).** Se `plan` non trova itinerari, si cercano impostazioni diverse con cui ci si arriva, ognuna col suo itinerario, cambiando il meno possibile:
+- più tempo: il minimo a passi di 5 min (prova col massimo, 90 min, poi conferma);
+- più strada a piedi per tratto: ricerca binaria tra il valore attuale e 1000 m;
+- se a piedi da solo non basta: combinazioni a piedi + tempo (valgono solo se chiedono meno tempo del fix "solo tempo");
+- più cambi (il primo numero che basta) e mezzi esclusi (solo quelli che l'itinerario usa);
+- "tutto a piedi" oltre il massimo per tratto (`changes.walkOnly`, poi `state.walkOnly`), se si cammina al più `Config.fixes.walkOnlyMaxMin` (30 min) o entro il tempo scelto;
+- se non c'è niente: tutto al massimo, poi ridotto.
+
+Ordinati per `Engine.fixCost`, in minuti "percepiti": durata + 0,5 × minuti a piedi + 3 per cambio, più le penalità per l'uscita dalle impostazioni dell'utente (1,5 × minuti a piedi oltre il suo massimo per tratto, 3 per cambio in più, 6 per mezzo riattivato); valori in `Config.fixes`. Itinerari uguali compaiono una volta sola, al massimo 4 fix. Le cache dei cambi a piedi create per le prove (`W.nb`) vengono tolte alla fine. Sui dati reali (9 ottobre 2026): 6–19 isocrone, 100–580 ms su PC. Nell'app (`UI.loadFixes`) il calcolo parte in differita (250 ms, "Cerco come arrivarci…") e resta valido finché non cambiano destinazione, partenza o impostazioni (al massimo 2 minuti, poi si ricalcola mostrando intanto i vecchi). La vista mostra la soluzione consigliata e le altre sotto "Altre N soluzioni"; toccandone una la si vede sulla mappa (`state.fixPick`), "Applica" (`UI.applyFix`) cambia preferenze e slider (`UI.syncControls`), "Ripristina" (`state.fixUndo`) torna indietro.
 
 `Engine.isochrone` salva per ogni round e fermata il "genitore" (corsa + fermata di salita, oppure fermata da cui si arriva a piedi); `Engine.journey` lo usa per ricostruire l'itinerario verso un punto qualsiasi, `Engine.nextDepartures` dà i passaggi successivi a una fermata.
 
-**Interazioni sulla mappa:** tocco breve = "Come arrivarci" (vista `journey` nel pannello; fuori dall'area → messaggio breve); pressione prolungata ≥ 550 ms o clic destro = sposta la partenza; il PIN resta trascinabile. Le linee disegnate non sono toccabili (coprirebbero l'area): una linea si seleziona dalla lista, da un mezzo live o da un badge nell'itinerario.
+**Interazioni sulla mappa:** tocco breve = "Come arrivarci" (`UI.goTo`, vista `journey` nel pannello; fuori dall'area → i fix); con la ricerca aperta il tocco la chiude e basta; pressione prolungata ≥ 550 ms o clic destro = sposta la partenza; il PIN resta trascinabile. Le linee disegnate non sono toccabili (coprirebbero l'area): una linea si seleziona dalla lista, da un mezzo live o da un badge nell'itinerario.
 
 **Mappa e pannello (interfaccia mobile alleggerita):**
 - Linee raggiungibili disegnate per intero, tenui; marcato il tratto percorribile entro il tempo (`reachSegment`).
@@ -57,7 +69,11 @@ Nella vista itinerario si mostra allora il percorso a piedi con il riquadro "Meg
 - Soglie di zoom in `MapView` (`Z`): sotto 14 i mezzi diventano pallini per gruppo (mappa generale) o piccoli cerchi (linea/itinerario), sotto 12 la mappa generale non ne mostra, sotto 13 si nasconde `dotsLayer` (fermate intermedie, frecce).
 - **Convenzione di direzione**, valida in tutta l'app: la freccia (`arrowSvg`) o il triangolo puntano dove va il mezzo; il cerchio (`.stop-mark`) è la fermata dove scendi. Etichette dell'itinerario: salita = freccia + linea, discesa = cerchio + linea; si aprono al tocco col nome della fermata.
 
-`app` contiene: `Prefs` (localStorage `hopon.prefs.v1`), `Cache` (IndexedDB `hopon`/`kv`), `Net`, `MapView` (Leaflet + layer isocrona su canvas), `UI`, `WalkAreas`, `Sheet`, `Settings`, `Data`, `Boot`.
+**Ricerca della destinazione (`Search`):** campo nella barra in alto (su telefono, aperto, copre il logo; il chip di stato è sotto, a sinistra). Fermate GTT cercate nell'indice (tutte le parole nel nome o il codice; una per nome, la più vicina; al più 4) e indirizzi/luoghi da **Photon** (`Config.urls.geocode`, OpenStreetMap, senza chiave, CORS aperto: non passa dal proxy). Photon (`Config.geocode`): dal 3° carattere, attesa 280 ms, richiesta precedente annullata, 15 risultati riordinati per posizione nella risposta + distanza dalla partenza (3 km = un posto) e tenuti 8; `bbox` = fermate dell'indice ± 0,05° (le fermate GTT coprono quasi tutta la provincia, quindi conta soprattutto il riordino); `lang` sempre passato (`_meta.geocode` della lingua: Photon accetta solo `default`, `de`, `en`, `fr`, e senza `lang` usa la lingua del browser); la partenza mandata per la precedenza ai vicini è arrotondata a 2 decimali (~1 km). Ricerche recenti in `prefs.recent` (6), mostrate a campo vuoto. Frecce + Invio da tastiera. La scelta apre `UI.goTo({lat, lon, name, sub})`: il titolo del pannello diventa il nome del luogo.
+
+`app` contiene: `Prefs` (localStorage `hopon.prefs.v1`), `Cache` (IndexedDB `hopon`/`kv`), `Net`, `Theme`, `MapView` (Leaflet + layer isocrona su canvas), `UI`, `Search`, `WalkAreas`, `Sheet`, `Settings`, `Data`, `Boot`.
+
+**Tema e lingua (Impostazioni → Aspetto e lingua):** `prefs.theme` = `auto` | `light` | `dark` (`data-theme` su `<html>`, token già pronti in `<style>`); al cambio si ridisegnano mappa di sfondo e linee. `prefs.lang` = `auto` | codice di `LOCALES`; `auto` prende la prima lingua del browser disponibile, altrimenti l'inglese. Al cambio (`I18n.onChange` → `UI.relabel`) si riapplicano i testi fissi e si ridisegna tutto senza ricaricare. I banner di avvio sono salvati come chiavi (`Boot.setBanner`) per poterli ritradurre. Avvisi GTT nella lingua scelta se il feed la ha (`Realtime.alerts(idx, feed, [lang, "it"])`).
 
 **Aree pedonali (`WalkAreas`):** un'area è un cerchio (centro, raggio 3/6/10 km) con le sue tessere; IndexedDB `walk:areas`, `walk:stored`, `walk:index`, `walk:t:<tx>_<ty>`. Download automatico (`ensure`) all'avvio, dopo il GPS e quando la partenza esce dalle aree; gestione manuale in Impostazioni → Percorsi a piedi. Sorgente: `walk/` dello stesso sito (http/https) oppure `prefs.walkBase`; da `file://` niente rete pedonale → stima.
 
@@ -68,6 +84,7 @@ Nella vista itinerario si mostra allora il percorso a piedi con il riquadro "Meg
 - Librerie solo da CDN con versione fissata: Leaflet 1.9.4 (cdnjs), fflate 0.8.2, maplibre-gl 5.24.0, @maplibre/maplibre-gl-leaflet 0.1.4 (jsdelivr). Niente protobuf.js: si usa il decoder interno.
 - Colori solo tramite token CSS (accento arancio, isocrona verde acqua; metro rosso, tram arancio, bus blu, treni viola). Ogni modifica grafica va controllata in tema chiaro e scuro e a larghezza telefono (390×844); da 900 px il pannello diventa colonna laterale.
 - Modalità normalizzate: 0 metro, 1 tram, 2 bus, 3 treno.
+- **Testi dell'interfaccia solo da `script#i18n`**: nel codice `t("chiave", {param})`, nel markup `data-i18n` / `data-i18n-html` / `data-i18n-attr` (+ `data-i18n-args`). Niente testi fissi nello `script#app`; numeri e date con `I18n.num` / `I18n.date` / `I18n.dateTime` / `I18n.time` (o `fmtDist`, `fmtDur`, `fmtMb`). Il `Core` non ha testi: le fasi di caricamento sono chiavi (`load.*`). L'italiano è la lingua di riferimento e deve essere completo; ogni nuova chiave va aggiunta a **tutte** le lingue. Plurali come oggetti `{ one, other, "=0" }` (Intl.PluralRules). **Nuova lingua:** copiare il blocco `en` in `LOCALES`, tradurre, compilare `_meta` (`name`, `locale`, `geocode`); controllare con `I18n.missing("xx")` (comando in "Test").
 
 ## Dati e rete
 
@@ -84,6 +101,12 @@ Non ci sono ancora file di test. `Core` si carica in Node estraendo lo script:
 
 ```bash
 node -e 'const fs=require("fs"),vm=require("vm");const src=fs.readFileSync("hop-on.html","utf8").match(/<script id="core">([\s\S]*?)<\/script>/)[1];const m={exports:{}};vm.runInNewContext(src,{module:m,console,TextDecoder,Date,Math});console.log(Object.keys(m.exports))'
+```
+
+Traduzioni: chiavi mancanti per lingua.
+
+```bash
+node -e 'const fs=require("fs"),vm=require("vm");const src=fs.readFileSync("hop-on.html","utf8").match(/<script id="i18n">([\s\S]*?)<\/script>/)[1];const m={exports:{}};vm.runInNewContext(src,{module:m,Intl});for(const l in m.exports.LOCALES)console.log(l,m.exports.missing(l))'
 ```
 
 Per l'interfaccia con i percorsi a piedi serve http: generare `walk/` (es. da BBBike Torino, 24 MB: `node tools/build-walk-tiles.mjs --pbf Turin.osm.pbf --out walk`), avviare il server `hopon` di `.claude/launch.json` e aprire `http://localhost:8080/hop-on.html`. Aperta come file, l'app funziona ma con i tratti a piedi stimati.
@@ -105,4 +128,5 @@ Per l'interfaccia con i percorsi a piedi serve http: generare `walk/` (es. da BB
 - **Pubblicazione (9 ottobre 2026):** sito online su https://follen99.github.io/HopOn-/ (Pages con Source = GitHub Actions), ma con la versione del commit `4632bd7`; in locale ci sono commit non ancora inviati e modifiche non salvate (mezzi filtrati, direzione). Il secret `HOPON_PROXY` va creato su GitHub perché il sito abbia il proxy predefinito.
 - L'utente prova anche dal telefono tramite il server locale (`http://<IP del PC>:8080/hop-on.html`).
 - Interfaccia mobile alleggerita (UPGRADES §1.1–1.6) fatta e verificata su localhost il 9 ottobre 2026.
+- Ricerca della destinazione con fix, tema chiaro/scuro/automatico, italiano e inglese (UPGRADES §2.7, §2.11, §2.12): fatti e verificati su localhost il 9 ottobre 2026 con dati reali (390×844 e desktop, chiaro e scuro, cambio di lingua al volo). Tempo a disposizione ora fino a 90 min (prima 60), così i fix "più tempo" si possono applicare.
 - Prossimi passi: vedi [UPGRADES.md](UPGRADES.md). Prima la **fluidità su mobile** (§3.8, con l'elenco dei punti caldi), poi il Web Worker per gli orari (§3.2).

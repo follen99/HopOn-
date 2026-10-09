@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f2f3ee">
 <title>Hop on!</title>
+<script>
+/* tema salvato (stessa chiave di Prefs), applicato prima del disegno: niente lampo di colori sbagliati */
+try { const t = JSON.parse(localStorage.getItem("hopon.prefs.v1") || "{}").theme; if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+</script>
 <!--
   HOP ON! — prototipo "dove arrivo in X minuti" con i mezzi GTT di Torino.
 
@@ -17,7 +21,8 @@
                                     Demo (rete finta), Walk (rete pedonale da tessere OSM),
                                     Engine (isocrona con Connection Scan Algorithm, itinerari)
     script#app                    browser: Cache (IndexedDB), Net (fetch via proxy), Realtime,
-                                    MapView (Leaflet + layer isocrona), UI, WalkAreas (aree a piedi), Boot
+                                    MapView (Leaflet + layer isocrona), UI, Search (ricerca destinazione), WalkAreas (aree a piedi), Boot
+    script#i18n                   testi dell'interfaccia (italiano, inglese) e I18n.t(); vedi le istruzioni in testa al blocco
 
   PERCORSI A PIEDI: tessere in walk/ generate da tools/build-walk-tiles.mjs (© OpenStreetMap, ODbL),
   pubblicate con l'app da .github/workflows/pages.yml (GitHub Pages).
@@ -186,6 +191,7 @@ button { cursor: pointer; }
 }
 .brand b { color: var(--accent); }
 .chip-status {
+  position: fixed; left: 12px; top: calc(env(safe-area-inset-top, 0px) + 62px); z-index: 880; max-width: calc(100vw - 90px);
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 11px;
   background: var(--surface); border-radius: 999px; box-shadow: var(--shadow);
   font-size: 12px; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -208,13 +214,46 @@ button { cursor: pointer; }
 }
 .banner {
   position: fixed; left: 12px; right: 66px; z-index: 880;
-  top: calc(env(safe-area-inset-top, 0px) + 62px);
+  top: calc(env(safe-area-inset-top, 0px) + 104px);
   background: var(--surface); border-radius: var(--r-md); box-shadow: var(--shadow);
   padding: 10px 12px; font-size: 13px; display: flex; gap: 10px; align-items: flex-start;
 }
 .banner p { margin: 0; flex: 1; min-width: 0; }
 .banner .x { border: 0; background: none; color: var(--muted); padding: 0 4px; font-size: 18px; line-height: 1; }
 .linkish { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---------- Ricerca della destinazione ---------- */
+.search {
+  flex: 1; min-width: 0; max-width: 520px; height: 42px; margin: 0; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 13px;
+  background: var(--surface); border-radius: 999px; box-shadow: var(--shadow);
+}
+.search > svg { width: 18px; height: 18px; color: var(--muted); flex: none; }
+.search input { flex: 1; min-width: 0; height: 100%; border: 0; padding: 0; background: none; outline: none; font-size: 15px; -webkit-appearance: none; appearance: none; }
+.search input::placeholder { color: var(--muted); opacity: 1; }
+.search input::-webkit-search-cancel-button { display: none; }
+.search:focus-within { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.search-x { flex: none; width: 28px; height: 28px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 18px; line-height: 1; }
+.topbar.searching .brand { display: none; }
+.search-panel {
+  position: fixed; z-index: 960; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 60px);
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 76px); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface); border-radius: var(--r-md); box-shadow: var(--shadow); padding: 4px 0;
+}
+.results { list-style: none; margin: 0; padding: 0; }
+.results .grp { padding: 10px 14px 4px; font: 600 11px/1 var(--f-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.results .msg { padding: 12px 14px; font-size: 13px; color: var(--muted); }
+.res { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; width: 100%; padding: 8px 14px; border: 0; background: none; text-align: left; }
+.res:hover, .res[aria-selected="true"] { background: var(--surface-2); }
+.res-ic { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); }
+.res-ic svg { width: 16px; height: 16px; }
+.res-ic.stop { border-radius: 8px; background: var(--ink); color: var(--surface); }
+.res-ic.poi { color: var(--accent); }
+.res-t { min-width: 0; display: grid; }
+.res-t b, .res-t small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.res-t small { font-size: 12.5px; color: var(--muted); }
+.res-d { font: 500 12px/1 var(--f-mono); color: var(--muted); white-space: nowrap; }
+.search-foot { margin: 0; padding: 6px 14px; border-top: 1px solid var(--hairline); font-size: 11px; color: var(--muted); }
+.search-foot:empty { display: none; }
 
 /* ---------- Pannello inferiore ---------- */
 .sheet {
@@ -341,6 +380,24 @@ button.badge { border: 0; }
 .jkey .arrow { color: var(--ink); }
 .jkey .stop-mark { width: 9px; height: 9px; border-width: 2.5px; color: var(--ink); }
 
+/* destinazione fuori dall'area: soluzioni ("fix") con le impostazioni da cambiare */
+.dest-sub { margin: -8px 0 10px; font-size: 13px; color: var(--muted); }
+.fixes { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.fix { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; align-items: center; padding: 10px 12px; border: 1.5px solid var(--hairline); border-radius: var(--r-md); background: var(--surface); }
+.fix.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.fix-main { display: grid; gap: 4px; min-width: 0; padding: 0; border: 0; background: none; text-align: left; }
+.fix-tag { justify-self: start; padding: 3px 6px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); font: 600 10px/1 var(--f-display); letter-spacing: .06em; text-transform: uppercase; }
+.fix-ch { font-size: 14px; font-weight: 700; }
+.fix-res { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px; color: var(--muted); }
+.fix-res b { color: var(--ink); }
+.fix-res .badge { min-width: 28px; height: 22px; padding: 0 6px; border-radius: 6px; font-size: 12px; }
+.fix-res .badge.metro { width: 22px; min-width: 22px; }
+.fix .btn { padding: 7px 14px; }
+.fix-more > summary { margin-top: 12px; font-size: 13px; color: var(--muted); }
+.fix-more .fixes { margin-top: 8px; }
+.fix-note { margin: 0 0 10px; padding: 8px 12px; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 0 var(--r-sm) var(--r-sm) 0; font-size: 13px; }
+.fix-note .linkish { margin-left: 4px; }
+
 /* dettaglio linea */
 .detail-head { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
 .detail-head h3 { margin: 0; font: 700 18px/1.2 var(--f-display); min-width: 0; }
@@ -359,6 +416,8 @@ button.badge { border: 0; }
 .stops time { font: 500 13px/1 var(--f-mono); font-variant-numeric: tabular-nums; }
 .hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
 .set-h { margin: 22px 0 2px; font: 700 17px/1.2 var(--f-display); }
+.set-h.first { margin-top: 16px; }
+.field .seg { justify-self: start; }
 .areas { list-style: none; margin: 8px 0 0; padding: 0; }
 .areas li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
 .areas li span { min-width: 0; display: grid; }
@@ -418,7 +477,7 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
 .loader {
   position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 70px); transform: translateX(-50%); z-index: 950;
   background: var(--ink); color: var(--surface); border-radius: 999px; padding: 9px 16px; font-size: 13px;
-  box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; max-width: calc(100% - 32px);
+  box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; width: max-content; max-width: calc(100% - 32px);
 }
 .loader .bar { width: 70px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--surface) 25%, transparent); overflow: hidden; flex: none; }
 .loader .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
@@ -429,7 +488,7 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (min-width: 900px) {
-  .sheet { left: 16px; right: auto; width: 400px; bottom: 16px; height: calc(100% - 92px); border-radius: var(--r-lg); transform: none !important; }
+  .sheet { left: 16px; right: auto; width: 400px; bottom: 16px; height: calc(100% - 124px); border-radius: var(--r-lg); transform: none !important; }   /* sotto il chip di stato */
   .handle { display: none; }
   .leaflet-bottom.leaflet-right, .fab-col { bottom: 16px; }
   .toast { bottom: 24px; }
@@ -437,78 +496,89 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
 </style>
 </head>
 <body>
+<!-- Testi: data-i18n="chiave" (testo), data-i18n-html (HTML del dizionario), data-i18n-attr="attributo:chiave,…"; vedi script#i18n -->
 
-<div id="map" aria-label="Mappa di Torino"></div>
+<div id="map" data-i18n-attr="aria-label:a11y.map"></div>
 
-<header class="topbar">
+<header class="topbar" id="topbar">
   <div class="brand" aria-label="Hop on!">Hop on<b>!</b></div>
-  <button class="chip-status" id="status" data-s="idle" type="button" aria-live="polite"><span class="dot"></span><span id="status-text">Avvio…</span></button>
-  <span class="spacer"></span>
-  <button class="icon-btn" id="btn-settings" type="button" aria-label="Impostazioni e dati">
+  <!-- ricerca di una destinazione: fermate GTT (locali) + indirizzi e luoghi (Photon / OpenStreetMap) -->
+  <form class="search" id="search" role="search" autocomplete="off">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+    <input id="search-in" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" data-i18n-attr="placeholder:search.placeholder,aria-label:search.aria">
+    <button type="button" class="search-x" id="search-x" hidden data-i18n-attr="aria-label:search.clear">×</button>
+  </form>
+  <button class="icon-btn" id="btn-settings" type="button" data-i18n-attr="aria-label:settings.open,title:settings.open">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
 </header>
+<div class="search-panel" id="search-panel" hidden>
+  <ul class="results" id="search-results" role="listbox" data-i18n-attr="aria-label:search.results"></ul>
+  <p class="search-foot" id="search-foot"></p>
+</div>
 
-<div class="banner" id="banner" hidden><p id="banner-text"></p><button class="x" id="banner-x" type="button" aria-label="Chiudi avviso">×</button></div>
+<button class="chip-status" id="status" data-s="idle" type="button" aria-live="polite"><span class="dot"></span><span id="status-text" data-i18n="status.starting">Avvio…</span></button>
+
+<div class="banner" id="banner" hidden><p id="banner-text"></p><button class="x" id="banner-x" type="button" data-i18n-attr="aria-label:common.closeNotice">×</button></div>
 
 <!-- impostazioni di viaggio: pallino flottante sotto l'ingranaggio, apribile anche durante un itinerario -->
 <div class="trip-fab">
-  <button class="icon-btn trip-btn" id="btn-trip" type="button" aria-expanded="false" aria-controls="trip-panel" aria-label="Impostazioni di viaggio">
+  <button class="icon-btn trip-btn" id="btn-trip" type="button" aria-expanded="false" aria-controls="trip-panel" data-i18n-attr="aria-label:trip.title">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
     <span class="trip-badge" id="trip-badge" aria-hidden="true">20′</span>
   </button>
 </div>
 <div class="trip-panel" id="trip-panel" hidden role="dialog" aria-labelledby="trip-title">
-  <div class="tp-head"><h2 id="trip-title">Impostazioni di viaggio</h2><button class="x" id="trip-close" type="button" aria-label="Chiudi le impostazioni di viaggio">×</button></div>
+  <div class="tp-head"><h2 id="trip-title" data-i18n="trip.title">Impostazioni di viaggio</h2><button class="x" id="trip-close" type="button" data-i18n-attr="aria-label:trip.close">×</button></div>
   <div class="tp-res" id="trip-res" aria-live="polite"></div>
   <div class="controls" id="controls">
     <div class="ctl">
-      <label for="in-time"><span>Tempo a disposizione</span><output id="out-time">20 min</output></label>
-      <input type="range" id="in-time" min="5" max="60" step="5" value="20">
+      <label for="in-time"><span data-i18n="trip.time">Tempo a disposizione</span><output id="out-time">20 min</output></label>
+      <input type="range" id="in-time" min="5" max="90" step="5" value="20">
     </div>
     <div class="ctl">
-      <label for="in-walk"><span>A piedi, massimo per tratto</span><output id="out-walk">400 m</output></label>
+      <label for="in-walk"><span data-i18n="trip.walk">A piedi, massimo per tratto</span><output id="out-walk">400 m</output></label>
       <input type="range" id="in-walk" min="0" max="1000" step="50" value="400">
     </div>
     <div class="ctl">
-      <label for="in-prefer"><span>Preferisco camminare sotto</span><output id="out-prefer">200 m</output></label>
+      <label for="in-prefer"><span data-i18n="trip.prefer">Preferisco camminare sotto</span><output id="out-prefer">200 m</output></label>
       <input type="range" id="in-prefer" min="0" max="1000" step="50" value="200" aria-describedby="prefer-help">
-      <p class="ctl-help" id="prefer-help">Sotto questa distanza cammini invece di prendere un mezzo; sopra, un mezzo o un cambio in più solo se fa arrivare almeno 2 min prima. Non supera il massimo a piedi e lo segue se lo abbassi.</p>
+      <p class="ctl-help" id="prefer-help" data-i18n="trip.preferHelp"></p>
     </div>
     <div class="ctl">
-      <span class="lbl"><span>Mezzi utilizzabili</span></span>
+      <span class="lbl"><span data-i18n="trip.modes">Mezzi utilizzabili</span></span>
       <div class="chips" id="mode-chips"></div>
     </div>
     <div class="ctl">
-      <span class="lbl"><span>Cambi</span></span>
-      <div class="seg" id="seg-transfers" role="group" aria-label="Numero massimo di cambi">
-        <button type="button" data-v="1">Nessuno</button>
-        <button type="button" data-v="2">Max 1</button>
-        <button type="button" data-v="3">Max 2</button>
+      <span class="lbl"><span data-i18n="trip.transfers">Cambi</span></span>
+      <div class="seg" id="seg-transfers" role="group" data-i18n-attr="aria-label:trip.transfersAria">
+        <button type="button" data-v="1" data-i18n="trip.transfersNone">Nessuno</button>
+        <button type="button" data-v="2" data-i18n="trip.transfersMax1">Max 1</button>
+        <button type="button" data-v="3" data-i18n="trip.transfersMax2">Max 2</button>
       </div>
     </div>
   </div>
 </div>
 
-<div class="loader" id="loader" hidden><span id="loader-text">Carico…</span><span class="bar"><i id="loader-bar"></i></span></div>
+<div class="loader" id="loader" hidden><span id="loader-text" data-i18n="common.loading">Carico…</span><span class="bar"><i id="loader-bar"></i></span></div>
 
 <div class="fab-col">
-  <button class="icon-btn" id="btn-locate" type="button" aria-label="Usa la mia posizione">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+  <button class="icon-btn" id="btn-locate" type="button" data-i18n-attr="aria-label:locate.button,title:locate.button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
   </button>
 </div>
 
-<section class="sheet" id="sheet" aria-label="Pannello Hop on!">
-  <button class="handle" id="handle" type="button" aria-label="Espandi o riduci il pannello"><span></span></button>
+<section class="sheet" id="sheet" data-i18n-attr="aria-label:a11y.sheet">
+  <button class="handle" id="handle" type="button" data-i18n-attr="aria-label:a11y.handle"><span></span></button>
   <div class="sheet-body" id="sheet-body">
 
     <div id="view-main">
       <div class="summary">
-        <h2 id="lines-title">In arrivo vicino a te</h2>
-        <span class="sub" id="sum-sub">Calcolo l'area raggiungibile…</span>
+        <h2 id="lines-title" data-i18n="main.title">In arrivo vicino a te</h2>
+        <span class="sub" id="sum-sub" data-i18n="main.computing">Calcolo l'area raggiungibile…</span>
       </div>
       <div class="legend" id="legend" hidden></div>
-      <p class="hint" id="hint">Tocca un punto della mappa per vedere come arrivarci. Tieni premuto per spostare la partenza.</p>
+      <p class="hint" id="hint" data-i18n="main.hint"></p>
 
       <ul class="lines" id="lines"></ul>
       <div class="via" id="via" hidden></div>
@@ -521,71 +591,438 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
 
 <div class="modal" id="settings" hidden role="dialog" aria-modal="true" aria-labelledby="set-title">
   <div class="modal-card">
-    <h2 id="set-title">Dati e impostazioni</h2>
-    <p>Hop on! legge gli orari e le posizioni dei mezzi dai feed aperti di GTT. Il server GTT non permette la lettura diretta da una pagina web, quindi serve un piccolo proxy gratuito (5 minuti, una volta sola).</p>
+    <h2 id="set-title" data-i18n="settings.title">Dati e impostazioni</h2>
 
-    <label class="field"><span>Indirizzo del proxy</span>
-      <input type="url" id="in-proxy" placeholder="https://hopon-proxy.tuonome.workers.dev/?url=" inputmode="url" autocomplete="off">
+    <h3 class="set-h first" data-i18n="settings.look">Aspetto e lingua</h3>
+    <div class="field"><span data-i18n="settings.theme">Tema</span>
+      <div class="seg" id="seg-theme" role="group" data-i18n-attr="aria-label:settings.theme">
+        <button type="button" data-v="auto" data-i18n="settings.themeAuto">Automatico</button>
+        <button type="button" data-v="light" data-i18n="settings.themeLight">Chiaro</button>
+        <button type="button" data-v="dark" data-i18n="settings.themeDark">Scuro</button>
+      </div>
+    </div>
+    <label class="field"><span data-i18n="settings.lang">Lingua</span>
+      <select id="in-lang"></select>
+    </label>
+
+    <h3 class="set-h" data-i18n="settings.data">Dati GTT</h3>
+    <p data-i18n="settings.intro"></p>
+    <label class="field"><span data-i18n="settings.proxyLabel">Indirizzo del proxy</span>
+      <input type="url" id="in-proxy" inputmode="url" autocomplete="off">
     </label>
     <p id="proxy-info" class="mono" hidden></p>
     <div class="row">
-      <button class="btn primary" id="btn-test" type="button">Salva e prova</button>
-      <button class="btn" id="btn-refresh-static" type="button">Riscarica orari GTT</button>
+      <button class="btn primary" id="btn-test" type="button" data-i18n="settings.saveTest">Salva e prova</button>
+      <button class="btn" id="btn-refresh-static" type="button" data-i18n="settings.redownload">Riscarica orari GTT</button>
     </div>
     <p id="test-result" class="mono"></p>
 
-    <label class="switch"><span>Mostra i mezzi in tempo reale (GPS)</span><input type="checkbox" id="in-veh-live"></label>
-    <label class="switch"><span>Mostra i mezzi stimati dall'orario (senza GPS, es. metro)</span><input type="checkbox" id="in-veh-est"></label>
-    <p>Sulla mappa compaiono solo i mezzi che stanno per passare dalle fermate raggiungibili a piedi; toccando una linea vedi tutti i suoi mezzi. Il triangolo accanto al mezzo punta dove sta andando, come la freccia sulle etichette dell'itinerario; la barretta in alto o in basso indica il capolinea (vedi "Verso …" nel dettaglio della linea). Rimpicciolendo la mappa i mezzi si raggruppano per linea.</p>
-    <label class="switch"><span>Area raggiungibile a fasce di tempo (tre colori)</span><input type="checkbox" id="in-iso-bands"></label>
-    <label class="switch"><span>Modalità demo (linee inventate)</span><input type="checkbox" id="in-demo"></label>
+    <label class="switch"><span data-i18n="settings.vehLive"></span><input type="checkbox" id="in-veh-live"></label>
+    <label class="switch"><span data-i18n="settings.vehEst"></span><input type="checkbox" id="in-veh-est"></label>
+    <p data-i18n="settings.vehHelp"></p>
+    <label class="switch"><span data-i18n="settings.isoBands"></span><input type="checkbox" id="in-iso-bands"></label>
+    <label class="switch"><span data-i18n="settings.demo"></span><input type="checkbox" id="in-demo"></label>
 
-    <label class="field"><span>Passo a piedi</span>
+    <label class="field"><span data-i18n="settings.pace">Passo a piedi</span>
       <select id="in-speed">
-        <option value="3.6">Tranquillo · 3,6 km/h</option>
-        <option value="4.5">Normale · 4,5 km/h</option>
-        <option value="5.4">Svelto · 5,4 km/h</option>
+        <option value="3.6" data-i18n="settings.paceSlow"></option>
+        <option value="4.5" data-i18n="settings.paceNormal"></option>
+        <option value="5.4" data-i18n="settings.paceFast"></option>
       </select>
     </label>
 
-    <h3 class="set-h">Percorsi a piedi</h3>
-    <p>Per calcolare i tratti a piedi lungo le strade, Hop on! scarica la rete pedonale della zona (dati OpenStreetMap). Succede da solo all'avvio, quando usi la tua posizione o quando sposti la partenza fuori dalle aree già scaricate.</p>
+    <h3 class="set-h" data-i18n="walkSet.title">Percorsi a piedi</h3>
+    <p data-i18n="walkSet.intro"></p>
     <p id="walk-status" class="mono"></p>
     <ul class="areas" id="walk-areas"></ul>
     <div class="row">
-      <select id="in-walk-radius" class="btn" aria-label="Raggio dell'area">
-        <option value="3">Raggio 3 km</option><option value="6">Raggio 6 km</option><option value="10">Raggio 10 km</option>
+      <select id="in-walk-radius" class="btn" data-i18n-attr="aria-label:walkSet.radiusAria">
+        <option value="3" data-i18n="walkSet.radius" data-i18n-args='{"n":3}'></option><option value="6" data-i18n="walkSet.radius" data-i18n-args='{"n":6}'></option><option value="10" data-i18n="walkSet.radius" data-i18n-args='{"n":10}'></option>
       </select>
-      <button class="btn" id="btn-walk-add" type="button">Scarica attorno alla partenza</button>
-      <button class="btn" id="btn-walk-refresh" type="button" hidden>Aggiorna le aree</button>
+      <button class="btn" id="btn-walk-add" type="button" data-i18n="walkSet.add">Scarica attorno alla partenza</button>
+      <button class="btn" id="btn-walk-refresh" type="button" hidden data-i18n="walkSet.refresh">Aggiorna le aree</button>
     </div>
     <details>
-      <summary>Sorgente dei dati a piedi (avanzato)</summary>
-      <label class="field"><span>Indirizzo della cartella <span class="mono">walk/</span></span>
-        <input type="url" id="in-walk-base" placeholder="Vuoto = stesso sito dell'app" inputmode="url" autocomplete="off">
+      <summary data-i18n="walkSet.advanced">Sorgente dei dati a piedi (avanzato)</summary>
+      <label class="field"><span data-i18n-html="walkSet.baseLabel"></span>
+        <input type="url" id="in-walk-base" inputmode="url" autocomplete="off" data-i18n-attr="placeholder:walkSet.basePlaceholder">
       </label>
-      <p>Serve solo se apri l'app da un file locale: indica la cartella <span class="mono">walk/</span> del sito pubblicato (es. https://tuonome.github.io/hop-on/walk/).</p>
+      <p data-i18n-html="walkSet.baseHelp"></p>
     </details>
 
-    <label class="field"><span>Chiave mappe CARTO (facoltativa)</span>
-      <input type="text" id="in-carto" placeholder="Vuoto = mappa OpenFreeMap" autocomplete="off" spellcheck="false">
+    <label class="field"><span data-i18n="settings.cartoLabel">Chiave mappe CARTO (facoltativa)</span>
+      <input type="text" id="in-carto" autocomplete="off" spellcheck="false" data-i18n-attr="placeholder:settings.cartoPlaceholder">
     </label>
-    <p>Non serve: di base la mappa usa OpenFreeMap, gratuito e senza chiave. Se preferisci lo stile CARTO, la chiave è gratuita su carto.com/basemaps/apikey.</p>
+    <p data-i18n="settings.cartoHelp"></p>
 
     <p id="cache-info" class="mono"></p>
 
     <details>
-      <summary>Come creare il proxy (Cloudflare Workers, gratis)</summary>
-      <p>1. Crea un account su dash.cloudflare.com → Workers &amp; Pages → Create → "Hello World". 2. Sostituisci il codice con quello qui sotto e premi Deploy. 3. Incolla qui sopra l'indirizzo del worker seguito da <span class="mono">/?url=</span>. Il proxy accetta solo i domini GTT e mette in cache le risposte (15 s per il tempo reale, 6 ore per gli orari).</p>
-      <div class="row"><button class="btn" id="btn-copy-worker" type="button">Copia codice</button></div>
+      <summary data-i18n="proxyHow.title">Come creare il proxy (Cloudflare Workers, gratis)</summary>
+      <p data-i18n-html="proxyHow.steps"></p>
+      <div class="row"><button class="btn" id="btn-copy-worker" type="button" data-i18n="proxyHow.copy">Copia codice</button></div>
       <pre class="code" id="worker-code"></pre>
     </details>
 
-    <div class="row" style="margin-top:18px"><button class="btn" id="btn-close-settings" type="button">Chiudi</button></div>
+    <div class="row" style="margin-top:18px"><button class="btn" id="btn-close-settings" type="button" data-i18n="common.close">Chiudi</button></div>
   </div>
 </div>
 
 <div class="toast" id="toast" hidden role="status"></div>
+
+<!-- ======================================================================
+     I18N — testi dell'interfaccia e traduzioni. Diventerà /src/i18n/*.js
+     Nessuna dipendenza; I18n.apply() tocca solo il DOM che riceve. Caricabile in Node (module.exports) per controllare le chiavi.
+
+     AGGIUNGERE UNA LINGUA: copiare il blocco "en" in LOCALES con il codice della lingua (es. "fr"), tradurre i testi e
+     compilare _meta. Il selettore nelle impostazioni e la scelta automatica (lingua del browser) la trovano da soli.
+     Le chiavi mancanti ricadono sull'italiano (lingua di riferimento, sempre completa); I18n.missing("fr") le elenca.
+
+     Formato dei testi:
+       "Arrivi alle {time}"                 segnaposto {nome}, sostituiti con i parametri di t(chiave, {time: …})
+       { one: "{n} linea", other: "{n} linee", "=0": "nessuna linea" }
+                                            plurali secondo Intl.PluralRules della lingua (zero, one, two, few, many, other)
+                                            sul parametro n; "=N" vale solo per il numero esatto N
+       Testi con tag HTML (<b>, <strong>…): solo nelle chiavi usate con innerHTML / data-i18n-html.
+     Nel markup: data-i18n="chiave" (testo), data-i18n-html="chiave", data-i18n-attr="attributo:chiave,…",
+     data-i18n-args='{"n": 3}' per i parametri.
+     ====================================================================== -->
+<script id="i18n">
+"use strict";
+const I18n = (() => {
+
+const LOCALES = {
+  it: {
+    _meta: { name: "Italiano", locale: "it-IT", geocode: "default" },   // geocode: lingua per Photon (default, de, en, fr; default = nomi locali)
+    common: { loading: "Carico…", computing: "Calcolo…", close: "Chiudi", closeNotice: "Chiudi avviso", back: "← Indietro", delete: "Elimina", na: "n.d.", apply: "Applica", undo: "Ripristina" },
+    a11y: { map: "Mappa di Torino", sheet: "Pannello Hop on!", handle: "Espandi o riduci il pannello" },
+    mode: { metro: "Metro", tram: "Tram", bus: "Bus", rail: "Treni" },
+    modeLower: { metro: "metro", tram: "tram", bus: "bus", rail: "treni" },
+    fmt: { now: "ora", min: "{n} min", m: "{n} m", km: "{n} km", minShort: "{n}′" },
+    n: {
+      lines: { one: "{n} linea", other: "{n} linee" },
+      stops: { one: "{n} fermata", other: "{n} fermate" },
+      transfers: { "=0": "nessun cambio", one: "{n} cambio", other: "{n} cambi" },
+      rides: { one: "{n} mezzo", other: "{n} mezzi" },
+      walk: "{dist} a piedi",
+    },
+    status: { starting: "Avvio…", live: "Live · {age}", now: "ora", ago: "{n} s fa", static: "Solo orari programmati", demo: "Demo", error: "Dati non disponibili" },
+    settings: {
+      open: "Impostazioni e dati", title: "Dati e impostazioni",
+      look: "Aspetto e lingua", theme: "Tema", themeAuto: "Automatico", themeLight: "Chiaro", themeDark: "Scuro",
+      lang: "Lingua", langAuto: "Automatica ({name})",
+      data: "Dati GTT",
+      intro: "Hop on! legge gli orari e le posizioni dei mezzi dai feed aperti di GTT. Il server GTT non permette la lettura diretta da una pagina web, quindi serve un piccolo proxy gratuito (5 minuti, una volta sola).",
+      proxyLabel: "Indirizzo del proxy", proxyPlaceholder: "https://hopon-proxy.tuonome.workers.dev/?url=", proxySitePlaceholder: "Vuoto = proxy del sito",
+      proxyOwn: "Stai usando il tuo proxy. Svuota il campo per tornare a quello del sito.", proxySite: "In uso il proxy del sito: non devi configurare nulla.",
+      saveTest: "Salva e prova", redownload: "Riscarica orari GTT",
+      proxyMissing: "Inserisci l'indirizzo del tuo proxy (vedi sotto come crearlo).", testing: "Provo a leggere le posizioni dei mezzi…",
+      testOk: "OK · {n} mezzi nel feed · aggiornato {time}", testFail: "Non riesco a leggere il feed ({err}). Controlla l'indirizzo del proxy: deve terminare con ?url=",
+      downloadFailed: "Download non riuscito: controlla il proxy",
+      vehLive: "Mostra i mezzi in tempo reale (GPS)", vehEst: "Mostra i mezzi stimati dall'orario (senza GPS, es. metro)",
+      vehHelp: "Sulla mappa compaiono solo i mezzi che stanno per passare dalle fermate raggiungibili a piedi; toccando una linea vedi tutti i suoi mezzi. Il triangolo accanto al mezzo punta dove sta andando, come la freccia sulle etichette dell'itinerario; la barretta in alto o in basso indica il capolinea (vedi \"Verso …\" nel dettaglio della linea). Rimpicciolendo la mappa i mezzi si raggruppano per linea.",
+      isoBands: "Area raggiungibile a fasce di tempo (tre colori)", demo: "Modalità demo (linee inventate)",
+      pace: "Passo a piedi", paceSlow: "Tranquillo · 3,6 km/h", paceNormal: "Normale · 4,5 km/h", paceFast: "Svelto · 5,4 km/h",
+      cartoLabel: "Chiave mappe CARTO (facoltativa)", cartoPlaceholder: "Vuoto = mappa OpenFreeMap",
+      cartoHelp: "Non serve: di base la mappa usa OpenFreeMap, gratuito e senza chiave. Se preferisci lo stile CARTO, la chiave è gratuita su carto.com/basemaps/apikey.",
+      cartoOn: "Mappe CARTO attivate", cartoOff: "Uso le mappe OpenFreeMap",
+      cacheInfo: "Orari GTT in cache: scaricati il {date} ({mb})", noCache: "Nessun orario GTT in cache",
+    },
+    walkSet: {
+      title: "Percorsi a piedi",
+      intro: "Per calcolare i tratti a piedi lungo le strade, Hop on! scarica la rete pedonale della zona (dati OpenStreetMap). Succede da solo all'avvio, quando usi la tua posizione o quando sposti la partenza fuori dalle aree già scaricate.",
+      radiusAria: "Raggio dell'area", radius: "Raggio {n} km", add: "Scarica attorno alla partenza", refresh: "Aggiorna le aree",
+      advanced: "Sorgente dei dati a piedi (avanzato)", baseLabel: "Indirizzo della cartella <span class=\"mono\">walk/</span>", basePlaceholder: "Vuoto = stesso sito dell'app",
+      baseHelp: "Serve solo se apri l'app da un file locale: indica la cartella <span class=\"mono\">walk/</span> del sito pubblicato (es. https://tuonome.github.io/hop-on/walk/).",
+      areaMeta: "raggio {n} km · {mb} · scaricata il {date}",
+      none: "Nessuna area scaricata: i tratti a piedi sono stimati (linea d'aria × {k}).",
+      noSource: "Sorgente non disponibile: apri l'app dal sito pubblicato oppure indica l'indirizzo qui sotto.",
+      ready: "Rete pronta: {n} incroci e punti", inMemory: " · {mb} in memoria", notYet: "Rete pedonale non ancora scaricata.",
+    },
+    walk: {
+      noSource: "Rete pedonale non raggiungibile: apri l'app dal sito pubblicato", noData: "Nessun dato sui percorsi a piedi per questa zona",
+      downloading: "Scarico i percorsi a piedi della zona · {got} di {total}", ready: "Percorsi a piedi pronti per {name}", failed: "Download dei percorsi a piedi non riuscito",
+      zone: "zona {name}",
+    },
+    proxyHow: {
+      title: "Come creare il proxy (Cloudflare Workers, gratis)",
+      steps: "1. Crea un account su dash.cloudflare.com → Workers &amp; Pages → Create → \"Hello World\". 2. Sostituisci il codice con quello qui sotto e premi Deploy. 3. Incolla qui sopra l'indirizzo del worker seguito da <span class=\"mono\">/?url=</span>. Il proxy accetta solo i domini GTT e mette in cache le risposte (15 s per il tempo reale, 6 ore per gli orari).",
+      copy: "Copia codice", copied: "Codice copiato", selected: "Selezionato: copia con il menu",
+    },
+    load: {
+      download: "Scarico gli orari GTT", downloadMb: "Scarico gli orari GTT · {mb}", error: "Errore nel leggere gli orari GTT: {err}",
+      openZip: "Apro l'archivio orari", readTrips: "Leggo le corse di oggi", buildIndex: "Costruisco l'indice", almostDone: "Quasi fatto",
+    },
+    boot: {
+      demoOn: "Stai usando la <strong>demo</strong>: linee e mezzi sono inventati.",
+      proxyDown: "Il proxy non risponde, quindi vedi la <strong>demo</strong> con linee inventate.", checkProxy: "Controlla il proxy",
+      noProxy: "Per i dati reali serve un proxy: per ora vedi la <strong>demo</strong> con linee inventate.", connect: "Collega i dati reali",
+    },
+    locate: {
+      button: "Usa la mia posizione", unsupported: "Il browser non fornisce la posizione", searching: "Cerco la tua posizione…", done: "Partenza impostata sulla tua posizione",
+      denied: "Permesso posizione negato: tieni premuto sulla mappa per scegliere la partenza", unavailable: "Posizione non disponibile: tieni premuto sulla mappa",
+    },
+    map: { origin: "Punto di partenza", originMoved: "Partenza spostata qui", gttData: "Dati GTT CC-BY" },
+    veh: { estimated: "posizione stimata dall'orario (nessun GPS)", label: "mezzo {label}", ago: "{n} s fa", group: { one: "{n} mezzo in arrivo", other: "{n} mezzi in arrivo" }, groupEst: "{n} stimati dall'orario" },
+    trip: {
+      title: "Impostazioni di viaggio", close: "Chiudi le impostazioni di viaggio", time: "Tempo a disposizione", walk: "A piedi, massimo per tratto", prefer: "Preferisco camminare sotto",
+      preferHelp: "Sotto questa distanza cammini invece di prendere un mezzo; sopra, un mezzo o un cambio in più solo se fa arrivare almeno 2 min prima. Non supera il massimo a piedi e lo segue se lo abbassi.",
+      modes: "Mezzi utilizzabili", transfers: "Cambi", transfersAria: "Numero massimo di cambi", transfersNone: "Nessuno", transfersMax1: "Max 1", transfersMax2: "Max 2",
+      walkValue: "{v} metri (minimo {min})", preferValue: "{v} metri (al massimo {max}, il limite a piedi)",
+      maxTransfers: { "=0": "nessun cambio", one: "max {n} cambio", other: "max {n} cambi" },
+      summary: "{min} min · {walk} m a piedi · {transfers}", noModes: "nessun mezzo", without: "senza {list}", only: "solo {list}", aria: "Impostazioni di viaggio: {sum}",
+    },
+    tripRes: {
+      area: "<b>Area in {min} min</b> · {lines} · {stops}", arrive: "<b>Arrivi alle {time}</b> · {dur}", betterWalk: "meglio a piedi", onFoot: "solo a piedi",
+      out: "<b>Fuori area</b>", outSearching: "<b>Fuori area</b> · cerco come arrivarci…", outFix: "<b>Fuori area</b> · consigliato: {fix}",
+    },
+    main: {
+      title: "In arrivo vicino a te", computing: "Calcolo l'area raggiungibile…",
+      hint: "Cerca un luogo in alto oppure tocca un punto della mappa per vedere come arrivarci. Tieni premuto per spostare la partenza.",
+      areaIn: "Area in {n} min", noRoutes: "nessun mezzo utile", walkEstimated: "a piedi stimato",
+      withOneTransfer: "Con un cambio", withTransfers: "Con cambi",
+      noneWalkable: "Nessun passaggio da prendere a piedi entro {n} min.", noneAtAll: "Nessuna linea raggiungibile con questi filtri. Prova ad aumentare il tempo o la distanza a piedi.",
+      towards: "→ {head}", stopWalk: "{stop} · {dist} a piedi", then: "poi {min}", live: "live",
+    },
+    line: { aria: "Linea {short}", showAria: "Linea {short}: mostra il percorso" },
+    detail: {
+      towards: "Verso {head}", board: "Sali a {stop}", withTransfers: { one: "Raggiungibile con {n} cambio", other: "Raggiungibile con {n} cambi" },
+      boardMeta: "{walk} a piedi · passa alle {time} ({min})", boardAt: "Sali a {stop} alle {time}", live: "orario aggiornato in tempo reale", sched: "orario programmato",
+      vehicles: { one: "{n} mezzo in linea visibile sulla mappa", other: "{n} mezzi in linea visibili sulla mappa" }, noVehicles: "Nessuna posizione live per questa linea",
+    },
+    journey: {
+      title: "Come arrivarci",
+      arrive: "Arrivi alle {time} · {dur}", leaveBy: "Esci entro le {time}", leaveIn: "(tra {dur})", oneRide: "1 mezzo, nessun cambio", rides: "{rides}, {transfers}", onFoot: "Ci arrivi a piedi",
+      keyBoard: "Sulla mappa: {arrow} dove va il mezzo (sali)", keyAlight: "dove scendi", keyTap: "Tocca un'etichetta per il nome della fermata",
+      walkTransfer: "Cambio a piedi", walk: "Cammina", approx: "circa", toStop: "fino a {stop}", toPoint: "fino al punto scelto", toPlace: "fino a {name}",
+      wait: "Attesa {dur}", towards: "{mode} verso <b>{head}</b>", terminus: "capolinea", board: "Sali a {stop}", alight: "Scendi a {stop}", arrival: "Arrivo",
+      boardTag: "Sali a {stop} · {time}", alightTag: "Scendi a {stop} · {time}",
+      dueIn: "passa tra {dur}", dueNow: "passa ora", scheduled: "orario programmato", nextAt: "poi alle {times}",
+      vehOnMap: "Mezzo {label} visibile sulla mappa", vehAge: "posizione di {n} s fa", stopsDur: "{stops} · {dur}",
+      estimatedNote: "Alcuni tratti a piedi sono stimati: manca la rete pedonale di quella zona (Impostazioni → Percorsi a piedi).", osmNote: "Tratti a piedi lungo le strade · dati © OpenStreetMap.",
+      tapOther: "Cerca o tocca un altro punto per cambiare destinazione.",
+    },
+    adv: {
+      onlyEarlier: "solo {dur} prima", sameTime: "più o meno alla stessa ora", later: "{dur} dopo", notLive: "Gli orari dei mezzi non sono in tempo reale.",
+      better: "<b>Meglio a piedi:</b> {dur} e {dist}. Con i mezzi ({names}) arriveresti {gain} e cammineresti comunque {walked}.", rideAnyway: "Vedi con i mezzi",
+      recommended: "<b>Consigliato a piedi:</b> {dur} e {dist}.", walkInstead: "Torna a piedi",
+      compare: "Tutto a piedi: {dur} e {dist}{late}. Con i mezzi guadagni {gain} e {saved} a piedi.", overBudget: ", oltre il tempo a disposizione", littleTime: "poco tempo",
+    },
+    fix: {
+      outTitle: "Fuori dalla tua area di {min} min", outMeta: "Con le impostazioni attuali non ci arrivi. Ecco come arrivarci:",
+      searching: "Cerco come arrivarci…", none: "Non ci arrivi neanche con {min} min, {walk} a piedi per tratto, {transfers} e tutti i mezzi. Prova un'altra destinazione o sposta la partenza.",
+      best: "Consigliata", others: { one: "Un'altra soluzione", other: "Altre {n} soluzioni" }, preview: "Mostra sulla mappa",
+      time: "Tempo {from} → {to} min", walk: "A piedi {from} → {to} m per tratto", transfers: { "=0": "Nessun cambio", one: "Fino a {n} cambio", other: "Fino a {n} cambi" },
+      modes: "Anche {list}", walkOnly: "Tutto a piedi",
+      result: "<b>Arrivi alle {time}</b> · {dur}", applied: "Impostazioni aggiornate: {what}",
+      note: "Impostazioni cambiate per arrivarci: {what}.",
+    },
+    search: {
+      placeholder: "Dove vuoi andare?", aria: "Cerca una destinazione: indirizzo, luogo, negozio o fermata", clear: "Cancella la ricerca", results: "Risultati della ricerca",
+      recent: "Ricerche recenti", stop: "Fermata GTT {code}", stopNoCode: "Fermata GTT",
+      searching: "Cerco…", none: "Nessun risultato in zona.", error: "Ricerca di indirizzi non disponibile: controlla la connessione. Le fermate GTT si trovano lo stesso.",
+      foot: "Indirizzi e luoghi: Photon · © OpenStreetMap",
+    },
+  },
+
+  en: {
+    _meta: { name: "English", locale: "en-GB", geocode: "en" },
+    common: { loading: "Loading…", computing: "Calculating…", close: "Close", closeNotice: "Close notice", back: "← Back", delete: "Delete", na: "n/a", apply: "Apply", undo: "Undo" },
+    a11y: { map: "Map of Turin", sheet: "Hop on! panel", handle: "Expand or collapse the panel" },
+    mode: { metro: "Metro", tram: "Tram", bus: "Bus", rail: "Trains" },
+    modeLower: { metro: "metro", tram: "tram", bus: "bus", rail: "trains" },
+    fmt: { now: "now", min: "{n} min", m: "{n} m", km: "{n} km", minShort: "{n}′" },
+    n: {
+      lines: { one: "{n} line", other: "{n} lines" },
+      stops: { one: "{n} stop", other: "{n} stops" },
+      transfers: { "=0": "no changes", one: "{n} change", other: "{n} changes" },
+      rides: { one: "{n} ride", other: "{n} rides" },
+      walk: "{dist} on foot",
+    },
+    status: { starting: "Starting…", live: "Live · {age}", now: "now", ago: "{n} s ago", static: "Timetables only", demo: "Demo", error: "Data unavailable" },
+    settings: {
+      open: "Settings and data", title: "Data and settings",
+      look: "Appearance and language", theme: "Theme", themeAuto: "Automatic", themeLight: "Light", themeDark: "Dark",
+      lang: "Language", langAuto: "Automatic ({name})",
+      data: "GTT data",
+      intro: "Hop on! reads timetables and vehicle positions from GTT's open feeds. The GTT server doesn't allow a web page to read them directly, so a small free proxy is needed (5 minutes, once).",
+      proxyLabel: "Proxy address", proxyPlaceholder: "https://hopon-proxy.yourname.workers.dev/?url=", proxySitePlaceholder: "Empty = the site's proxy",
+      proxyOwn: "You're using your own proxy. Clear the field to go back to the site's one.", proxySite: "Using the site's proxy: nothing to set up.",
+      saveTest: "Save and test", redownload: "Download GTT timetables again",
+      proxyMissing: "Enter your proxy address (see below how to create one).", testing: "Trying to read vehicle positions…",
+      testOk: "OK · {n} vehicles in the feed · updated {time}", testFail: "Can't read the feed ({err}). Check the proxy address: it must end with ?url=",
+      downloadFailed: "Download failed: check the proxy",
+      vehLive: "Show real-time vehicles (GPS)", vehEst: "Show vehicles estimated from the timetable (no GPS, e.g. metro)",
+      vehHelp: "The map only shows vehicles about to pass the stops you can walk to; tap a line to see all its vehicles. The triangle next to a vehicle points where it's heading, like the arrow on the journey labels; the bar at the top or bottom tells the terminus (see \"Towards …\" in the line details). Zooming out groups vehicles by line.",
+      isoBands: "Reachable area in time bands (three colours)", demo: "Demo mode (made-up lines)",
+      pace: "Walking pace", paceSlow: "Relaxed · 3.6 km/h", paceNormal: "Normal · 4.5 km/h", paceFast: "Brisk · 5.4 km/h",
+      cartoLabel: "CARTO map key (optional)", cartoPlaceholder: "Empty = OpenFreeMap map",
+      cartoHelp: "Not needed: by default the map uses OpenFreeMap, free and keyless. If you prefer the CARTO style, get a free key at carto.com/basemaps/apikey.",
+      cartoOn: "CARTO maps enabled", cartoOff: "Using OpenFreeMap maps",
+      cacheInfo: "GTT timetables cached: downloaded {date} ({mb})", noCache: "No GTT timetables cached",
+    },
+    walkSet: {
+      title: "Walking routes",
+      intro: "To route walks along real streets, Hop on! downloads the pedestrian network of the area (OpenStreetMap data). It happens on its own at startup, when you use your location or when you move the start outside the areas already downloaded.",
+      radiusAria: "Area radius", radius: "Radius {n} km", add: "Download around the start", refresh: "Update the areas",
+      advanced: "Walking data source (advanced)", baseLabel: "Address of the <span class=\"mono\">walk/</span> folder", basePlaceholder: "Empty = same site as the app",
+      baseHelp: "Only needed if you open the app from a local file: enter the <span class=\"mono\">walk/</span> folder of the published site (e.g. https://yourname.github.io/hop-on/walk/).",
+      areaMeta: "radius {n} km · {mb} · downloaded {date}",
+      none: "No area downloaded: walking legs are estimated (straight line × {k}).",
+      noSource: "Source unavailable: open the app from the published site or enter the address below.",
+      ready: "Network ready: {n} junctions and points", inMemory: " · {mb} in memory", notYet: "Pedestrian network not downloaded yet.",
+    },
+    walk: {
+      noSource: "Pedestrian network unreachable: open the app from the published site", noData: "No walking data for this area",
+      downloading: "Downloading walking routes for the area · {got} of {total}", ready: "Walking routes ready for {name}", failed: "Walking routes download failed",
+      zone: "{name} area",
+    },
+    proxyHow: {
+      title: "How to create the proxy (Cloudflare Workers, free)",
+      steps: "1. Create an account at dash.cloudflare.com → Workers &amp; Pages → Create → \"Hello World\". 2. Replace the code with the one below and press Deploy. 3. Paste the worker address above, followed by <span class=\"mono\">/?url=</span>. The proxy only accepts GTT domains and caches the responses (15 s for real time, 6 hours for timetables).",
+      copy: "Copy code", copied: "Code copied", selected: "Selected: copy it from the menu",
+    },
+    load: {
+      download: "Downloading GTT timetables", downloadMb: "Downloading GTT timetables · {mb}", error: "Error reading GTT timetables: {err}",
+      openZip: "Opening the timetable archive", readTrips: "Reading today's trips", buildIndex: "Building the index", almostDone: "Almost done",
+    },
+    boot: {
+      demoOn: "You're using the <strong>demo</strong>: lines and vehicles are made up.",
+      proxyDown: "The proxy isn't responding, so you're seeing the <strong>demo</strong> with made-up lines.", checkProxy: "Check the proxy",
+      noProxy: "Real data needs a proxy: for now you're seeing the <strong>demo</strong> with made-up lines.", connect: "Connect real data",
+    },
+    locate: {
+      button: "Use my location", unsupported: "The browser doesn't provide your location", searching: "Finding your location…", done: "Start set to your location",
+      denied: "Location permission denied: press and hold on the map to choose the start", unavailable: "Location unavailable: press and hold on the map",
+    },
+    map: { origin: "Starting point", originMoved: "Start moved here", gttData: "GTT data CC-BY" },
+    veh: { estimated: "position estimated from the timetable (no GPS)", label: "vehicle {label}", ago: "{n} s ago", group: { one: "{n} vehicle arriving", other: "{n} vehicles arriving" }, groupEst: "{n} estimated from the timetable" },
+    trip: {
+      title: "Trip settings", close: "Close trip settings", time: "Time available", walk: "Walking, max per leg", prefer: "I'd rather walk under",
+      preferHelp: "Below this distance you walk instead of taking a vehicle; above it, an extra ride or change only if it gets you there at least 2 min earlier. It never exceeds the walking maximum and follows it down.",
+      modes: "Transport allowed", transfers: "Changes", transfersAria: "Maximum number of changes", transfersNone: "None", transfersMax1: "Max 1", transfersMax2: "Max 2",
+      walkValue: "{v} metres (minimum {min})", preferValue: "{v} metres (at most {max}, the walking limit)",
+      maxTransfers: { "=0": "no changes", one: "max {n} change", other: "max {n} changes" },
+      summary: "{min} min · {walk} m on foot · {transfers}", noModes: "no transport", without: "without {list}", only: "only {list}", aria: "Trip settings: {sum}",
+    },
+    tripRes: {
+      area: "<b>Area in {min} min</b> · {lines} · {stops}", arrive: "<b>Arrive at {time}</b> · {dur}", betterWalk: "better on foot", onFoot: "on foot only",
+      out: "<b>Out of range</b>", outSearching: "<b>Out of range</b> · finding a way…", outFix: "<b>Out of range</b> · suggested: {fix}",
+    },
+    main: {
+      title: "Arriving near you", computing: "Calculating the reachable area…",
+      hint: "Search for a place above or tap the map to see how to get there. Press and hold to move the start.",
+      areaIn: "Area in {n} min", noRoutes: "no useful transport", walkEstimated: "walking estimated",
+      withOneTransfer: "With one change", withTransfers: "With changes",
+      noneWalkable: "Nothing to catch on foot within {n} min.", noneAtAll: "No line reachable with these filters. Try more time or a longer walk.",
+      towards: "→ {head}", stopWalk: "{stop} · {dist} on foot", then: "then {min}", live: "live",
+    },
+    line: { aria: "Line {short}", showAria: "Line {short}: show the route" },
+    detail: {
+      towards: "Towards {head}", board: "Board at {stop}", withTransfers: { one: "Reachable with {n} change", other: "Reachable with {n} changes" },
+      boardMeta: "{walk} on foot · leaves at {time} ({min})", boardAt: "Board at {stop} at {time}", live: "real-time schedule", sched: "scheduled time",
+      vehicles: { one: "{n} vehicle on the line shown on the map", other: "{n} vehicles on the line shown on the map" }, noVehicles: "No live positions for this line",
+    },
+    journey: {
+      title: "How to get there",
+      arrive: "Arrive at {time} · {dur}", leaveBy: "Leave by {time}", leaveIn: "(in {dur})", oneRide: "1 ride, no changes", rides: "{rides}, {transfers}", onFoot: "You get there on foot",
+      keyBoard: "On the map: {arrow} where the vehicle goes (board)", keyAlight: "where you get off", keyTap: "Tap a label for the stop name",
+      walkTransfer: "Walk to change", walk: "Walk", approx: "about", toStop: "to {stop}", toPoint: "to the chosen point", toPlace: "to {name}",
+      wait: "Wait {dur}", towards: "{mode} towards <b>{head}</b>", terminus: "terminus", board: "Board at {stop}", alight: "Get off at {stop}", arrival: "Arrival",
+      boardTag: "Board at {stop} · {time}", alightTag: "Get off at {stop} · {time}",
+      dueIn: "due in {dur}", dueNow: "due now", scheduled: "scheduled time", nextAt: "then at {times}",
+      vehOnMap: "Vehicle {label} shown on the map", vehAge: "position from {n} s ago", stopsDur: "{stops} · {dur}",
+      estimatedNote: "Some walking legs are estimated: the pedestrian network of that area is missing (Settings → Walking routes).", osmNote: "Walking legs along the streets · data © OpenStreetMap.",
+      tapOther: "Search or tap another point to change destination.",
+    },
+    adv: {
+      onlyEarlier: "only {dur} earlier", sameTime: "at about the same time", later: "{dur} later", notLive: "Transport times aren't real-time.",
+      better: "<b>Better on foot:</b> {dur} and {dist}. By transport ({names}) you'd arrive {gain} and still walk {walked}.", rideAnyway: "See by transport",
+      recommended: "<b>Suggested on foot:</b> {dur} and {dist}.", walkInstead: "Back to walking",
+      compare: "All on foot: {dur} and {dist}{late}. By transport you save {gain} and {saved} of walking.", overBudget: ", beyond your time", littleTime: "little time",
+    },
+    fix: {
+      outTitle: "Outside your {min} min area", outMeta: "You can't get there with your current settings. Here's how you can:",
+      searching: "Finding a way to get there…", none: "Not reachable even with {min} min, {walk} on foot per leg, {transfers} and all transport. Try another destination or move the start.",
+      best: "Suggested", others: { one: "One more option", other: "{n} more options" }, preview: "Show on the map",
+      time: "Time {from} → {to} min", walk: "Walking {from} → {to} m per leg", transfers: { "=0": "No changes", one: "Up to {n} change", other: "Up to {n} changes" },
+      modes: "Also {list}", walkOnly: "All on foot",
+      result: "<b>Arrive at {time}</b> · {dur}", applied: "Settings updated: {what}",
+      note: "Settings changed to get there: {what}.",
+    },
+    search: {
+      placeholder: "Where to?", aria: "Search a destination: address, place, shop or stop", clear: "Clear search", results: "Search results",
+      recent: "Recent searches", stop: "GTT stop {code}", stopNoCode: "GTT stop",
+      searching: "Searching…", none: "No results nearby.", error: "Address search unavailable: check your connection. GTT stops can still be found.",
+      foot: "Addresses and places: Photon · © OpenStreetMap",
+    },
+  },
+};
+
+const BASE = "it";                       // lingua di riferimento: completa, usata per le chiavi mancanti
+let lang = BASE, dict = LOCALES[BASE], plural = null, listeners = [];
+const get = (d, key) => key.split(".").reduce((o, k) => (o == null ? undefined : o[k]), d);
+const meta = (l = lang) => LOCALES[l]._meta;
+
+/** Testo per la chiave, con segnaposto {nome} e plurali sul parametro n. Chiave sconosciuta → la chiave stessa. */
+function t(key, p) {
+  let v = get(dict, key); if (v === undefined) v = get(LOCALES[BASE], key);
+  if (v === undefined) return key;
+  if (typeof v === "object") {
+    const n = p && p.n != null ? +p.n : 0;
+    v = v["=" + n] != null ? v["=" + n] : v[(plural || (plural = new Intl.PluralRules(meta().locale))).select(n)] ?? v.other;
+  }
+  return p ? String(v).replace(/\{(\w+)\}/g, (m, k) => (p[k] != null ? p[k] : m)) : String(v);
+}
+/** Lingua per la preferenza "auto": la prima del browser che esiste in LOCALES, altrimenti inglese. */
+function detect(prefs) {
+  for (const l of prefs || []) { const c = String(l).toLowerCase().split("-")[0]; if (LOCALES[c]) return c; }
+  return LOCALES.en ? "en" : BASE;
+}
+const browserLangs = () => (typeof navigator !== "undefined" ? navigator.languages || [navigator.language] : []);
+/** Imposta la lingua: "auto" o un codice di LOCALES. */
+function set(pref) {
+  const l = pref && pref !== "auto" && LOCALES[pref] ? pref : detect(browserLangs());
+  const changed = l !== lang; lang = l; dict = LOCALES[l]; plural = null;
+  if (typeof document !== "undefined") document.documentElement.lang = l;
+  if (changed) for (const f of listeners) f(l);
+  return l;
+}
+/** Applica i testi agli elementi con data-i18n* dentro root. */
+function apply(root) {
+  const args = (el) => { try { return el.dataset.i18nArgs ? JSON.parse(el.dataset.i18nArgs) : undefined; } catch { return undefined; } };
+  for (const el of root.querySelectorAll("[data-i18n]")) el.textContent = t(el.dataset.i18n, args(el));
+  for (const el of root.querySelectorAll("[data-i18n-html]")) el.innerHTML = t(el.dataset.i18nHtml, args(el));
+  for (const el of root.querySelectorAll("[data-i18n-attr]"))
+    for (const pair of el.dataset.i18nAttr.split(",")) { const [a, k] = pair.split(":").map((s) => s.trim()); if (a && k) el.setAttribute(a, t(k, args(el))); }
+}
+/** Chiavi presenti nella lingua di riferimento ma non in l (per chi traduce). */
+function missing(l) {
+  const out = [], walk = (o, pre) => { for (const k in o) { if (k === "_meta") continue; const key = pre ? pre + "." + k : k; if (typeof o[k] === "object" && !("other" in o[k])) walk(o[k], key); else if (get(LOCALES[l], key) === undefined) out.push(key); } };
+  walk(LOCALES[BASE], ""); return out;
+}
+const fmtNum = (x, digits = 0) => new Intl.NumberFormat(meta().locale, { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(x);
+
+return {
+  t, set, apply, missing, LOCALES, BASE,
+  get lang() { return lang; }, get locale() { return meta().locale; }, get geocodeLang() { return meta().geocode || "default"; },
+  /** Lingue disponibili: [{ code, name }] nell'ordine di LOCALES. */
+  list: () => Object.keys(LOCALES).map((code) => ({ code, name: LOCALES[code]._meta.name })),
+  autoName: () => meta(detect(browserLangs())).name,
+  onChange(f) { listeners.push(f); },
+  num: fmtNum,
+  date: (ms) => new Date(ms).toLocaleDateString(meta().locale),
+  dateTime: (ms) => new Date(ms).toLocaleString(meta().locale),
+  time: (ms) => new Date(ms).toLocaleTimeString(meta().locale),
+};
+})();
+if (typeof module !== "undefined") module.exports = I18n;
+// lingua salvata (stessa chiave di Prefs nello script#app), applicata subito: niente lampo di testi nella lingua sbagliata
+if (typeof document !== "undefined") {
+  let pref = "auto"; try { pref = JSON.parse(localStorage.getItem("hopon.prefs.v1") || "{}").lang || "auto"; } catch {}
+  I18n.set(pref); I18n.apply(document);
+}
+</script>
 
 <!-- ======================================================================
      PROXY CORS — Cloudflare Worker (da copiare nel dashboard Cloudflare)
@@ -642,6 +1079,7 @@ const Config = {
     vehicles: "https://percorsieorari.gtt.to.it/das_gtfsrt/vehicle_position.aspx",
     tripUpdates: "https://percorsieorari.gtt.to.it/das_gtfsrt/trip_update.aspx",
     alerts: "https://percorsieorari.gtt.to.it/das_gtfsrt/alerts.aspx",
+    geocode: "https://photon.komoot.io/api/",       // CORS aperto, nessuna chiave: non passa dal proxy
   },
   defaultOrigin: { lat: 45.0711, lon: 7.6857 },   // piazza Castello
   realtimeEveryMs: 30000,
@@ -653,6 +1091,14 @@ const Config = {
   // o gainSched (orari programmati) + perRide per ogni mezzo oltre il primo, OPPURE far camminare molto meno
   // (almeno max(minSavedM, minSavedFrac × percorso a piedi)); altrimenti si suggerisce di andare a piedi
   walkAdvice: { gainLiveSec: 120, gainSchedSec: 240, perRideSec: 120, minSavedM: 300, minSavedFrac: 0.4 },
+  // "fix" per una destinazione fuori dall'area (Engine.fixes): costo in minuti "percepiti" =
+  // durata + walkWeight × minuti a piedi + transferMin per cambio, più le penalità per quanto si esce dalle impostazioni
+  // dell'utente: overWalkWeight × minuti a piedi oltre il suo massimo per tratto, overRidesMin per cambio in più, newModeMin per mezzo riattivato
+  // walkOnlyMaxMin: si propone di andare tutto a piedi (oltre il massimo per tratto) se si cammina al più così, o entro il tempo scelto
+  fixes: { max: 4, walkWeight: 0.5, transferMin: 3, overWalkWeight: 1.5, overRidesMin: 3, newModeMin: 6, walkOnlyMaxMin: 30 },
+  // ricerca di indirizzi e luoghi (Photon, dati OpenStreetMap): area = fermate dell'indice ± bboxPadDeg; si chiedono `fetch`
+  // risultati e se ne tengono `limit`, riordinati per posizione nella risposta + distanza dalla partenza (kmPerRank km = un posto)
+  geocode: { minChars: 3, debounceMs: 280, fetch: 15, limit: 8, kmPerRank: 3, bboxPadDeg: 0.05 },
   indexVersion: 3,
 };
 
@@ -805,9 +1251,10 @@ const GtfsRt = (() => {
     if (f === 1 && w === 2) o.trip = trip(r.sub()); else if (f === 2 && w === 2) o.pos = position(r.sub());
     else if (f === 3 && w === 0) o.seq = r.varint(); else if (f === 4 && w === 0) o.status = r.varint(); else if (f === 5 && w === 0) o.ts = r.u64();
     else if (f === 7 && w === 2) o.stopId = r.str(); else if (f === 8 && w === 2) o.vehicle = vdesc(r.sub()); else if (f === 9 && w === 0) o.occupancy = r.varint(); else return false; return true; }); return o; };
-  const tstr = (r) => { let text = "", it = ""; r.each((f, w) => {
+  // TranslatedString → [[lingua, testo], ...] (la scelta della lingua la fa Realtime.alerts)
+  const tstr = (r) => { const out = []; r.each((f, w) => {
     if (f === 1 && w === 2) { const t = r.sub(); let s = "", l = ""; t.each((g, x) => { if (g === 1 && x === 2) s = t.str(); else if (g === 2 && x === 2) l = t.str(); else return false; return true; });
-      if (!text) text = s; if (l === "it") it = s; return true; } return false; }); return it || text; };
+      out.push([l, s]); return true; } return false; }); return out; };
   const informed = (r) => { const o = {}; r.each((f, w) => {
     if (f === 2 && w === 2) o.routeId = r.str(); else if (f === 5 && w === 2) o.stopId = r.str(); else if (f === 4 && w === 2) o.trip = trip(r.sub()); else return false; return true; }); return o; };
   const alert = (r) => { const o = { entities: [] }; r.each((f, w) => {
@@ -920,13 +1367,13 @@ const GtfsStatic = {
    * @param zip  Uint8Array dello zip GTFS
    * @param now  Date di riferimento (giorno di servizio)
    * @param deps { fflate }
-   * @param onProgress (fase, frazione 0..1)
+   * @param onProgress (fase, frazione 0..1); fase = chiave dei testi tradotti (load.*), il Core non ha testi dell'interfaccia
    */
   async build(zip, now, deps, onProgress = () => {}) {
     const { fflate } = deps;
     const base = (n) => n.split("/").pop();
     const SMALL = new Set(["stops.txt", "routes.txt", "trips.txt", "calendar.txt", "calendar_dates.txt"]);
-    onProgress("Apro l'archivio orari", 0.02);
+    onProgress("load.openZip", 0.02);
     const small = fflate.unzipSync(zip, { filter: (f) => SMALL.has(base(f.name)) });
     const files = {}; for (const k in small) files[base(k)] = small[k];
     if (!files["stops.txt"] || !files["trips.txt"] || !files["routes.txt"]) throw new Error("Zip GTFS incompleto");
@@ -975,7 +1422,7 @@ const GtfsStatic = {
       tripIdx.set(f[c.trip_id], tripMeta.length);
       tripMeta.push({ id: f[c.trip_id], route: r, dir: c.direction_id != null ? (+f[c.direction_id] || 0) : 0, head: (f[c.trip_headsign] || "").trim(), shape: s, today: a0, yday: a1 });
     });
-    onProgress("Leggo le corse di oggi", 0.12);
+    onProgress("load.readTrips", 0.12);
 
     // stop_times.txt e shapes.txt in streaming (sono i file grossi)
     const rTrip = growable(Int32Array, 1 << 20), rSeq = growable(Int32Array, 1 << 20), rStop = growable(Int32Array, 1 << 20), rTime = growable(Int32Array, 1 << 20);
@@ -1007,13 +1454,13 @@ const GtfsStatic = {
         try {
           const end = Math.min(off + CH * 8, zip.length);
           while (off < end) { const nx = Math.min(off + CH, zip.length); uz.push(zip.subarray(off, nx), nx === zip.length); off = nx; }
-          onProgress("Leggo le corse di oggi", 0.12 + 0.68 * off / zip.length);
+          onProgress("load.readTrips", 0.12 + 0.68 * off / zip.length);
           if (off < zip.length) setTimeout(step, 0); else resolve();
         } catch (e) { reject(e); }
       };
       step();
     });
-    onProgress("Costruisco l'indice", 0.82);
+    onProgress("load.buildIndex", 0.82);
 
     // raggruppa righe per corsa e ordina per stop_sequence
     const R = rTrip.length, trA = rTrip.done(), sqA = rSeq.done(), stA = rStop.done(), tmA = rTime.done();
@@ -1048,7 +1495,7 @@ const GtfsStatic = {
     }
     while (cur <= nS) sStart[cur++] = P;
 
-    onProgress("Quasi fatto", 0.95);
+    onProgress("load.almostDone", 0.95);
     return finalizeIndex({
       source: "gtt", dateKey: keys[0], dayStart: Time.dayStart(now),
       stops, routes, tripsRaw, shapes: { start: sStart, coords },
@@ -1079,7 +1526,7 @@ const Demo = {
     const tripsRaw = [];
     const toLL = (x, y) => [c.lat + y / 110574, c.lon + x / (111320 * Math.cos(c.lat * Math.PI / 180))];
     defs.forEach((d, ri) => {
-      routes.id.push("demo-" + ri); routes.short.push(d.short); routes.long.push("Linea dimostrativa " + d.short); routes.mode.push(d.mode); routes.color.push("");
+      routes.id.push("demo-" + ri); routes.short.push(d.short); routes.long.push("Demo " + d.short); routes.mode.push(d.mode); routes.color.push("");
       // percorso: segmento che attraversa il centro con una leggera curva
       const a = d.ang * Math.PI / 180, ox = (rnd() - 0.5) * 1500, oy = (rnd() - 0.5) * 1500, bend = (rnd() - 0.5) * d.curve * d.len;
       const pts = [];
@@ -1218,14 +1665,16 @@ const Realtime = {
       return false;
     });
   },
-  alerts(idx, feed) {
+  /** Avvisi con le linee coinvolte; testi nella prima lingua disponibile tra langs (es. ["en", "it"]), altrimenti la prima del feed. */
+  alerts(idx, feed, langs = ["it"]) {
     if (!feed) return [];
     const byRoute = Realtime._routeMap(idx), out = [];
+    const pick = (tr) => { if (!tr || !tr.length) return ""; for (const l of langs) { const x = tr.find((p) => p[0] === l); if (x) return x[1]; } return tr[0][1]; };
     for (const e of feed.entities) {
       const a = e.alert; if (!a) continue;
       const routes = new Set();
       for (const ie of a.entities) { if (ie.routeId && byRoute.has(ie.routeId)) routes.add(byRoute.get(ie.routeId)); if (ie.trip && ie.trip.routeId && byRoute.has(ie.trip.routeId)) routes.add(byRoute.get(ie.trip.routeId)); }
-      out.push({ header: a.header || "", description: a.description || "", routes });
+      out.push({ header: pick(a.header), description: pick(a.description), routes });
     }
     return out;
   },
@@ -1721,16 +2170,127 @@ const Engine = {
    */
   walkAdvice(idx, res, j, lat, lon) {
     if (!j || !j.rides) return null;
-    const o = res.opts, A = Config.walkAdvice, P = { lat, lon }, O = { lat: o.lat, lon: o.lon };
-    const p = Walk.path(o.walk, idx, O, P, Math.max(o.maxWalk, (res.end - res.nowSec) * o.walkMps));
+    const A = Config.walkAdvice, walk = Engine.walkTrip(idx, res, lat, lon);
+    if (!walk) return null;
+    const arrive = walk.arrive, dist = walk.walk;
+    const rides = j.legs.filter((l) => l.type === "ride"), live = rides.every((l) => l.live);
+    const gainSec = arrive - j.arrive, savedM = dist - j.walk;
+    const minGainSec = (live ? A.gainLiveSec : A.gainSchedSec) + A.perRideSec * (rides.length - 1);
+    const suggest = arrive <= res.end && gainSec < minGainSec && savedM < Math.max(A.minSavedM, A.minSavedFrac * dist);
+    return { walk, suggest, gainSec, savedM, live, minGainSec };
+  },
+  /**
+   * Itinerario da mostrare verso un punto: quello coi mezzi (journey) confrontato con il percorso tutto a piedi (walkAdvice).
+   * best = a piedi se conviene e rideAnyway è falso, altrimenti coi mezzi; null se il punto è fuori dall'area.
+   */
+  plan(idx, res, lat, lon, rideAnyway, walkOnly) {
+    if (walkOnly) { const w = Engine.walkTrip(idx, res, lat, lon); return { ride: null, adv: null, best: w && w.arrive <= res.end ? w : null }; }
+    const ride = Engine.journey(idx, res, lat, lon), adv = Engine.walkAdvice(idx, res, ride, lat, lon);
+    return { ride, adv, best: adv && adv.suggest && !rideAnyway ? adv.walk : ride };
+  },
+  /** Percorso tutto a piedi dall'origine (senza il limite per tratto, entro il tempo massimo di camminata): itinerario o null. */
+  walkTrip(idx, res, lat, lon, maxSec = res.end - res.nowSec) {
+    const o = res.opts, P = { lat, lon }, p = Walk.path(o.walk, idx, { lat: o.lat, lon: o.lon }, P, Math.max(o.maxWalk, maxSec * o.walkMps));
     if (!p) return null;
     const arrive = res.nowSec + p.dist / o.walkMps;
-    const walk = Engine._summary(res, [{ type: "walk", from: O, to: P, dist: p.dist, dep: res.nowSec, arr: arrive, pts: p.pts, estimated: p.estimated }], arrive);
-    const rides = j.legs.filter((l) => l.type === "ride"), live = rides.every((l) => l.live);
-    const gainSec = arrive - j.arrive, savedM = p.dist - j.walk;
-    const minGainSec = (live ? A.gainLiveSec : A.gainSchedSec) + A.perRideSec * (rides.length - 1);
-    const suggest = arrive <= res.end && gainSec < minGainSec && savedM < Math.max(A.minSavedM, A.minSavedFrac * p.dist);
-    return { walk, suggest, gainSec, savedM, live, minGainSec };
+    return Engine._summary(res, [{ type: "walk", from: { lat: o.lat, lon: o.lon }, to: P, dist: p.dist, dep: res.nowSec, arr: arrive, pts: p.pts, estimated: p.estimated }], arrive);
+  },
+  /**
+   * "Fix" per una destinazione fuori dall'area: impostazioni diverse (più tempo, più strada a piedi per tratto,
+   * più cambi, altri mezzi, o una combinazione) con cui ci si arriva, ognuna con l'itinerario che ne risulta.
+   * Ogni proposta cambia il meno possibile: il tempo minimo (a passi di lim.budgetMin), la distanza a piedi minima
+   * (ricerca binaria), il primo numero di corse che basta, solo i mezzi che l'itinerario usa davvero.
+   * Le combinazioni con il tempo si cercano solo se più strada a piedi da sola non basta, e valgono solo se chiedono
+   * meno tempo del fix "solo tempo". Ordinate per Engine.fixCost; itinerari uguali tenuti una volta sola.
+   * @param base opzioni attuali di isochrone() (budgetSec, maxWalk, maxRides, modes, walk, rt, ...)
+   * @param lim  { budgetMin: [min, max, passo], maxWalk: [min, max, passo], maxRides, preferWish }
+   * C'è anche "tutto a piedi" (changes.walkOnly, oltre il massimo per tratto) se si cammina al più Config.fixes.walkOnlyMaxMin.
+   * @return [{ changes: { budgetMin?, maxWalk?, maxRides?, modes?, walkOnly? }, journey, cost }], al massimo Config.fixes.max
+   */
+  fixes(idx, base, lat, lon, lim) {
+    const W = base.walk, nbBefore = W ? new Set(W.nb.keys()) : null;
+    const cur = { budgetMin: Math.round(base.budgetSec / 60), maxWalk: base.maxWalk, maxRides: base.maxRides, modes: base.modes.slice() };
+    const [minB, maxB, stepB] = lim.budgetMin, [, maxW, stepW] = lim.maxWalk;
+    const memo = new Map();
+    const run = (c) => {
+      const key = [c.budgetMin, c.maxWalk, c.maxRides, c.modes.map(Number).join("")].join("|");
+      if (memo.has(key)) return memo.get(key);
+      const o = Object.assign({}, base, { budgetSec: c.budgetMin * 60, maxWalk: c.maxWalk, preferWalk: Math.min(lim.preferWish, c.maxWalk), maxRides: c.maxRides, modes: c.modes });
+      const res = Engine.isochrone(idx, o), j = Engine.plan(idx, res, lat, lon).best, out = j ? { j, res } : null;
+      memo.set(key, out); return out;
+    };
+    // tempo minimo con le altre impostazioni di c: prova con il tempo massimo (cap), poi conferma arrotondando al passo
+    const minTime = (c, cap = maxB) => {
+      const p = run({ ...c, budgetMin: cap }); if (!p) return null;
+      const need = Math.max(minB, c.budgetMin, Math.ceil((p.j.arrive - p.res.nowSec) / 60 / stepB - 1e-9) * stepB);
+      for (let b = need; b <= cap; b += stepB) if (run({ ...c, budgetMin: b })) return { ...c, budgetMin: b };
+      return null;
+    };
+    // distanza a piedi minima con il tempo di c (c.maxWalk non basta): ricerca binaria tra c.maxWalk e il massimo
+    const minWalk = (c) => {
+      if (c.maxWalk >= maxW || !run({ ...c, maxWalk: maxW })) return null;
+      let lo = c.maxWalk, hi = maxW;
+      while (hi - lo > stepW) { const mid = lo + Math.round((hi - lo) / 2 / stepW) * stepW; if (run({ ...c, maxWalk: mid })) hi = mid; else lo = mid; }
+      return { ...c, maxWalk: hi };
+    };
+    const cands = [], add = (c) => { if (c) cands.push(c); };
+    const tA = minTime(cur); add(tA);
+    const capT = tA ? tA.budgetMin - stepB : maxB;          // le combinazioni col tempo devono chiederne meno di tA
+    const wB = minWalk(cur); add(wB);
+    if (!wB && cur.maxWalk < maxW) {
+      for (const w of [...new Set([Math.round((cur.maxWalk + maxW) / 2 / stepW) * stepW, maxW])]) {
+        const c = w > cur.maxWalk && capT >= cur.budgetMin ? minTime({ ...cur, maxWalk: w }, capT) : null;
+        if (c) add(minWalk({ ...cur, budgetMin: c.budgetMin }) || c);
+      }
+    }
+    for (let r = cur.maxRides + 1; r <= lim.maxRides; r++) {
+      const c = { ...cur, maxRides: r };
+      if (run(c)) { add(c); break; }
+      if (r === lim.maxRides && capT >= cur.budgetMin) {
+        let x = minTime(c, capT);                              // poi i cambi minimi con quel tempo
+        for (let r2 = cur.maxRides + 1; x && r2 < r; r2++) if (run({ ...x, maxRides: r2 })) { x = { ...x, maxRides: r2 }; break; }
+        add(x);
+      }
+    }
+    if (cur.modes.some((on) => !on)) {
+      const all = cur.modes.map(() => true), c = run({ ...cur, modes: all }) ? { ...cur, modes: all } : capT >= cur.budgetMin ? minTime({ ...cur, modes: all }, capT) : null;
+      if (c) {
+        // solo i mezzi che l'itinerario usa davvero
+        const used = new Set(run(c).j.legs.filter((l) => l.type === "ride").map((l) => idx.routes.mode[l.route]));
+        const only = cur.modes.map((on, i) => on || used.has(i));
+        add(run({ ...c, modes: only }) ? { ...c, modes: only } : c);
+      }
+    }
+    if (!cands.length) {                                      // ultima possibilità: tutto al massimo, poi il meno possibile
+      const c = minTime({ budgetMin: cur.budgetMin, maxWalk: maxW, maxRides: lim.maxRides, modes: cur.modes.map(() => true) });
+      if (c) add(c.maxWalk > cur.maxWalk ? minWalk({ ...c, maxWalk: cur.maxWalk }) || c : c);
+    }
+    const out = [], seen = new Set();
+    const wMax = Math.min(maxB, Math.max(cur.budgetMin, Config.fixes.walkOnlyMaxMin)) * 60;
+    const wt = Engine.walkTrip(idx, { opts: base, nowSec: base.nowSec, end: base.nowSec + wMax }, lat, lon, wMax);
+    if (wt && wt.arrive - base.nowSec <= wMax) {             // per primo: a parità di costo vince (non cambia altro)
+      const b = Math.max(cur.budgetMin, Math.ceil((wt.arrive - base.nowSec) / 60 / stepB - 1e-9) * stepB);
+      const changes = b !== cur.budgetMin ? { budgetMin: b, walkOnly: true } : { walkOnly: true };
+      out.push({ changes, journey: wt, cost: Engine.fixCost(wt, base.nowSec, cur, cur, base.walkMps), n: Object.keys(changes).length });
+    }
+    for (const c of cands) {
+      const p = run(c); if (!p) continue;
+      const changes = {};
+      for (const k of ["budgetMin", "maxWalk", "maxRides"]) if (c[k] !== cur[k]) changes[k] = c[k];
+      if (c.modes.some((v, i) => v !== cur.modes[i])) changes.modes = c.modes;
+      out.push({ changes, journey: p.j, cost: Engine.fixCost(p.j, p.res.nowSec, cur, c, base.walkMps), n: Object.keys(changes).length });
+    }
+    out.sort((a, b) => a.cost - b.cost);
+    const list = out.filter((f) => { const sig = f.journey.legs.map((l) => l.type === "ride" ? l.trip + ":" + l.kFrom + ":" + l.kTo : "w").join(",") + "@" + Math.round(f.journey.arrive / 60); if (seen.has(sig)) return false; seen.add(sig); return true; });
+    if (W) for (const k of [...W.nb.keys()]) if (!nbBefore.has(k)) W.nb.delete(k);   // cambi a piedi messi in cache per le prove
+    return list.slice(0, Config.fixes.max).map(({ changes, journey, cost }) => ({ changes, journey, cost }));
+  },
+  /** Costo "percepito" (minuti) di un itinerario ottenuto con le impostazioni c invece di cur: vedi Config.fixes. */
+  fixCost(j, nowSec, cur, c, mps) {
+    const F = Config.fixes, legMax = j.legs.reduce((a, l) => l.type === "walk" ? Math.max(a, l.dist) : a, 0);
+    const newModes = c.modes.filter((on, i) => on && !cur.modes[i]).length;
+    return (j.arrive - nowSec) / 60 + F.walkWeight * j.walk / mps / 60 + F.transferMin * Math.max(0, j.rides - 1)
+      + F.overWalkWeight * Math.max(0, legMax - cur.maxWalk) / mps / 60 + F.overRidesMin * Math.max(0, j.rides - cur.maxRides) + F.newModeMin * newModes;
   },
   _summary(res, legs, arrive) {
     const rides = legs.filter((l) => l.type === "ride"), mps = res.opts.walkMps;
@@ -1785,17 +2345,18 @@ if (typeof module !== "undefined") module.exports = Core;
 (() => {
 const { Config, MODES, Geo, Time, GtfsRt, GtfsStatic, Demo, Realtime, Walk, Shape, Engine } = Core;
 const $ = (s) => document.querySelector(s);
+const t = I18n.t;                       // testi dell'interfaccia (script#i18n)
 
 /* ---------------- Preferenze (localStorage, solo comodità) ---------------- */
 const Prefs = {
   key: "hopon.prefs.v1",
   load() {
-    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null, walkRadiusKm: 6, walkBase: "", preferWalk: 200, vehLive: true, vehScheduled: true, isoBands: false, hintSeen: false };
+    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null, walkRadiusKm: 6, walkBase: "", preferWalk: 200, vehLive: true, vehScheduled: true, isoBands: false, hintSeen: false, theme: "auto", lang: "auto", recent: [] };
     let p; try { p = Object.assign(d, JSON.parse(localStorage.getItem(this.key) || "{}")); } catch { p = d; }
     return Prefs.fix(p);
   },
   /** Limiti dei controlli di viaggio [min, max, passo], gli stessi degli slider. */
-  LIMITS: { budgetMin: [5, 60, 5], maxWalk: [100, 1000, 50], preferWalk: [0, 1000, 50] },
+  LIMITS: { budgetMin: [5, 90, 5], maxWalk: [100, 1000, 50], preferWalk: [0, 1000, 50], maxRides: 3 },
   /**
    * Valori di viaggio validi e coerenti: nei limiti, multipli del passo, e "preferisco camminare sotto" mai oltre
    * "a piedi, massimo per tratto". preferWish è l'ultima preferenza scelta dall'utente: se il limite a piedi scende
@@ -1809,6 +2370,9 @@ const Prefs = {
     p.preferWalk = Math.min(p.preferWish, p.maxWalk);
     p.maxRides = [1, 2, 3].includes(+p.maxRides) ? +p.maxRides : 2;
     p.modes = Array.isArray(p.modes) && p.modes.length === MODES.length ? p.modes.map(Boolean) : MODES.map(() => true);
+    if (!["auto", "light", "dark"].includes(p.theme)) p.theme = "auto";
+    if (p.lang !== "auto" && !I18n.LOCALES[p.lang]) p.lang = "auto";
+    if (!Array.isArray(p.recent)) p.recent = [];
     return p;
   },
   save(p) { try { localStorage.setItem(this.key, JSON.stringify(p)); } catch {} },
@@ -1888,13 +2452,28 @@ const state = {
   result: null,
   selected: -1,
   view: "main",              // main | detail | journey
-  dest: null,                // punto toccato sulla mappa (vista "Come arrivarci")
+  dest: null,                // destinazione (tocco sulla mappa o ricerca): { lat, lon, name?, sub? } (vista "Come arrivarci")
   journey: null,
+  fixes: null,               // destinazione fuori area: { key, at, list (null = in calcolo) }, vedi UI.loadFixes
+  fixPick: 0,                // indice del fix mostrato sulla mappa
+  fixUndo: null,             // { prefs, changes } prima dell'ultimo fix applicato (per "Ripristina")
+  walkOnly: false,           // fix "tutto a piedi" applicato per questa destinazione
   journeyFit: false,
   walk: null,                // rete pedonale agganciata alle fermate (Walk.attach), null = distanze stimate
 };
 if (!state.prefs.origin) state.prefs.origin = { ...Config.defaultOrigin };
 const walkMps = () => state.prefs.walkKmh / 3.6;
+
+/* ---------------- Tema: automatico (come il sistema), chiaro o scuro ----------------
+   Il tema salvato è già applicato da uno script in <head>; qui si riapplica a ogni cambio. */
+const Theme = {
+  apply() {
+    const v = state.prefs.theme, root = document.documentElement;
+    if (v === "light" || v === "dark") root.dataset.theme = v; else delete root.dataset.theme;
+    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = getComputedStyle(root).getPropertyValue("--bg").trim() || m.content;
+  },
+};
+Theme.apply();
 const nowSec = () => Time.secOfDay(Date.now(), state.idx ? state.idx.dayStart : Time.dayStart(new Date()));
 /** Freccia di direzione, convenzione unica dell'app: punta dove va il mezzo (deg = gradi da nord, in senso orario). */
 const arrowSvg = (deg) => `<svg class="arrow" viewBox="-6 -6 12 12" aria-hidden="true" style="transform:rotate(${Math.round(deg)}deg)"><path d="M0 -5.2L4.4 4.6L0 2.4L-4.4 4.6Z"/></svg>`;
@@ -1919,18 +2498,18 @@ const MapView = (() => {
     const osm = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
     if (key) {
       tiles = L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/${isDark() ? "dark_all" : "light_all"}/{z}/{x}/{y}.png?key=${encodeURIComponent(key)}`, { maxZoom: 19 });
-      attr = `${osm} · © <a href="https://carto.com/attributions">CARTO</a> · Dati GTT CC-BY`;
+      attr = `${osm} · © <a href="https://carto.com/attributions">CARTO</a> · ${t("map.gttData")}`;
     } else if (L.maplibreGL && window.maplibregl && hasWebGL) {
       tiles = L.maplibreGL({ style: `https://tiles.openfreemap.org/styles/${isDark() ? "dark" : "positron"}` });
-      attr = `<a href="https://openfreemap.org">OpenFreeMap</a> ${osm} · Dati GTT CC-BY`;
+      attr = `<a href="https://openfreemap.org">OpenFreeMap</a> ${osm} · ${t("map.gttData")}`;
     } else {
       tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, className: "osm-tiles" });
-      attr = `${osm} · Dati GTT CC-BY`;
+      attr = `${osm} · ${t("map.gttData")}`;
     }
     tiles.addTo(map);
     map.attributionControl.addAttribution(attr);
   };
-  setTiles(); if (dark && dark.addEventListener) dark.addEventListener("change", setTiles);
+  setTiles(); if (dark && dark.addEventListener) dark.addEventListener("change", () => { if (state.prefs.theme === "auto") { setTiles(); Theme.apply(); UI.recompute(true); } });
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
   /* Layer isocrona su canvas, un solo colore (oppure tre fasce di tempo se prefs.isoBands):
@@ -2013,7 +2592,7 @@ const MapView = (() => {
   map.on("zoomend", syncDots); syncDots();
 
   const pin = L.marker([state.prefs.origin.lat, state.prefs.origin.lon], {
-    draggable: true, zIndexOffset: 1000, keyboard: true, title: "Punto di partenza",
+    draggable: true, zIndexOffset: 1000, keyboard: true, title: t("map.origin"),
     icon: L.divIcon({ className: "", html: '<div class="pin"></div>', iconSize: [30, 30], iconAnchor: [15, 34] }),
   }).addTo(map);
   const journeyLayer = L.layerGroup().addTo(map);
@@ -2028,7 +2607,7 @@ const MapView = (() => {
   const longPress = (latlng) => {
     cancelPress(); suppressUntil = Date.now() + 800;
     if (navigator.vibrate) try { navigator.vibrate(15); } catch {}
-    UI.setOrigin(latlng.lat, latlng.lng, false); UI.hintDone(); toast("Partenza spostata qui");
+    UI.setOrigin(latlng.lat, latlng.lng, false); UI.hintDone(); toast(t("map.originMoved"));
   };
   box.addEventListener("pointerdown", (e) => {
     cancelPress();
@@ -2040,7 +2619,7 @@ const MapView = (() => {
   box.addEventListener("pointerup", cancelPress); box.addEventListener("pointercancel", cancelPress);
   map.on("movestart zoomstart", cancelPress);
   map.on("contextmenu", (e) => { if (Date.now() >= suppressUntil) longPress(e.latlng); });
-  map.on("click", (e) => { if (Date.now() >= suppressUntil) UI.tapPoint(e.latlng.lat, e.latlng.lng); });
+  map.on("click", (e) => { if (Search.open) { Search.close(); return; } if (Date.now() >= suppressUntil) UI.tapPoint(e.latlng.lat, e.latlng.lng); });
 
   const routeColor = (idx, r) => idx.routes.color[r] && idx.routes.color[r] !== "#" ? idx.routes.color[r] : css(MODES[idx.routes.mode[r]].css);
   // geometrie calcolate una volta per indice (forme delle linee, percorsi delle corse con le fermate agganciate)
@@ -2206,7 +2785,7 @@ const MapView = (() => {
       // al cambio l'etichetta fissa è solo quella di salita del mezzo successivo, per non sovrapporle
       const next = rides[rides.indexOf(l) + 1];
       const transfer = next && Geo.dist(idx.stops.lat[l.to], idx.stops.lon[l.to], idx.stops.lat[next.from], idx.stops.lon[next.from]) < 250;
-      const onName = `Sali a ${esc(stopName(idx, l.from))} · ${clock(l.dep)}`, offName = `Scendi a ${esc(stopName(idx, l.to))} · ${clock(l.arr)}`;
+      const onName = t("journey.boardTag", { stop: esc(stopName(idx, l.from)), time: clock(l.dep) }), offName = t("journey.alightTag", { stop: esc(stopName(idx, l.to)), time: clock(l.arr) });
       // vicino alla partenza l'etichetta di salita va sotto la fermata, altrimenti la copre il PIN
       const o = state.prefs.origin, underPin = Geo.dist(idx.stops.lat[l.from], idx.stops.lon[l.from], o.lat, o.lon) < 300;
       dot(l.from, null);
@@ -2222,7 +2801,7 @@ const MapView = (() => {
 
   const vehTip = (idx, v) => {
     const head = v.trip >= 0 ? soften(idx.trips.head[v.trip] || "") : "";
-    return `${esc(idx.routes.short[v.route])}${head ? " → " + esc(head) : ""}${v.scheduled ? " · posizione stimata dall'orario (nessun GPS)" : `${v.label ? " · mezzo " + esc(v.label) : ""}${v.ageSec ? " · " + v.ageSec + " s fa" : ""}`}`;
+    return `${esc(idx.routes.short[v.route])}${head ? " → " + esc(head) : ""}${v.scheduled ? " · " + t("veh.estimated") : `${v.label ? " · " + t("veh.label", { label: esc(v.label) }) : ""}${v.ageSec ? " · " + t("veh.ago", { n: v.ageSec }) : ""}`}`;
   };
   const selectFrom = (r) => (e) => { L.DomEvent.stopPropagation(e); UI.select(r); };
   /** Mappa generale rimpicciolita: un pallino per gruppo di mezzi della stessa linea vicini sullo schermo (~70 px), col numero. */
@@ -2238,7 +2817,7 @@ const MapView = (() => {
       const short = esc(idx.routes.short[g.route]);
       const html = `<div class="veh-group${g.live ? "" : " est"}" style="--veh-c:${routeColor(idx, g.route)}">${short}${g.n > 1 ? `<b>${g.n}</b>` : ""}</div>`;
       L.marker([g.lat / g.n, g.lon / g.n], { icon: L.divIcon({ className: "", html, iconSize: null, iconAnchor: [0, 0] }), zIndexOffset: 500, keyboard: false })
-        .bindTooltip(`${short} · ${g.n} ${g.n === 1 ? "mezzo" : "mezzi"} in arrivo${g.live < g.n ? ` (${g.n - g.live} stimati dall'orario)` : ""}`)
+        .bindTooltip(`${short} · ${t("veh.group", { n: g.n })}${g.live < g.n ? ` (${t("veh.groupEst", { n: g.n - g.live })})` : ""}`)
         .on("click", selectFrom(g.route)).addTo(vehLayer);
     }
   }
@@ -2291,14 +2870,20 @@ const MapView = (() => {
     map.setView(map.unproject(p, z), z, { animate: false });
   }
 
-  return { map, iso, pin, drawLines, drawJourney, fitPoints, drawVehicles, fitRoute, routeColor, centerOn, refreshTiles: setTiles };
+  /** Testi della mappa nella lingua attuale (attribuzione, titolo del PIN). */
+  const relabel = () => { setTiles(); const el = pin.getElement(); if (el) el.title = t("map.origin"); };
+  return { map, iso, pin, drawLines, drawJourney, fitPoints, drawVehicles, fitRoute, routeColor, centerOn, refreshTiles: setTiles, relabel };
 })();
 
 /* ---------------- UI ---------------- */
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-const fmtMin = (sec) => { const m = Math.max(0, Math.round(sec / 60)); return m === 0 ? "ora" : m + " min"; };
-const fmtDur = (sec) => Math.max(1, Math.round(sec / 60)) + " min";
-const fmtDist = (m) => m < 1000 ? Math.round(m / 10) * 10 + " m" : (m / 1000).toFixed(1).replace(".", ",") + " km";
+const fmtMin = (sec) => { const m = Math.max(0, Math.round(sec / 60)); return m === 0 ? t("fmt.now") : t("fmt.min", { n: m }); };
+const fmtDur = (sec) => t("fmt.min", { n: Math.max(1, Math.round(sec / 60)) });
+const fmtDist = (m) => m < 1000 ? t("fmt.m", { n: Math.round(m / 10) * 10 }) : t("fmt.km", { n: I18n.num(m / 1000, 1) });
+const fmtMb = (b) => I18n.num(b / 1e6, 1) + " MB";
+const modeName = (i) => t("mode." + MODES[i].key);
+/** Elenco "a, b e c" nella lingua attuale. */
+const listOf = (a) => { try { return new Intl.ListFormat(I18n.locale, { type: "conjunction" }).format(a); } catch { return a.join(", "); } };
 /* Nomi GTT tipo "Fermata 1683 - BERTOLA CAP": tolgo il prefisso (resta il codice) e ammorbidisco il maiuscolo. */
 const SMALL_WORDS = new Set(["di", "del", "della", "dello", "dei", "degli", "delle", "da", "dal", "dalla", "e", "in", "a", "al", "alla", "ai", "agli", "alle", "per", "su", "sul", "sulla"]);
 function soften(name) {
@@ -2313,68 +2898,95 @@ function stopLabel(idx, s) {
 const stopName = (idx, s) => stopLabel(idx, s).name;
 const ICON_WALK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13" cy="4" r="2"/><path d="M9 21l2-6 3 3v5M7 12l2-4 4 1 2 4 3 1M11 15l1-6"/></svg>';
 
+const ICON_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>';
+const ICON_POI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14l-1.2 12H6.2L5 8z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="3" width="11" height="9" rx="2"/><path d="M12 12v9M9 21h6M9.5 7.5h5"/></svg>';
+const ICON_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>';
+/** Riquadro col numero della linea; button = toccabile (apre il dettaglio della linea). */
+function lineBadge(idx, r, button, label) {
+  const cls = `badge ${MODES[idx.routes.mode[r]].key}`, st = `background:${MapView.routeColor(idx, r)}`, short = esc(idx.routes.short[r]);
+  return button ? `<button type="button" class="${cls}" data-route="${r}" aria-label="${label || t("line.aria", { short })}" style="${st}">${short}</button>` : `<span class="${cls}" style="${st}">${short}</span>`;
+}
+
 const UI = {
   init() {
     const p = state.prefs;
-    // controlli
-    /* Slider di viaggio. I due slider a piedi hanno la stessa scala 0–1000 m (stessa posizione = stessa distanza);
-       i valori non ammessi sono tratteggiati sulla barra e il cursore si ferma al limite:
-       - "A piedi, massimo per tratto" non scende sotto 100 m;
-       - "Preferisco camminare sotto" non supera il massimo a piedi e lo segue quando scende (Prefs.fix). */
-    const inT = $("#in-time"), inW = $("#in-walk"), inP = $("#in-prefer"), L = Prefs.LIMITS;
-    const track = (el, lo, hi, v, okFrom, okTo) => {
-      const pc = (x) => ((x - lo) / (hi - lo) * 100).toFixed(2) + "%";
-      el.style.setProperty("--a", pc(okFrom)); el.style.setProperty("--v", pc(v)); el.style.setProperty("--b", pc(okTo));
-    };
-    const sync = () => {
-      inT.value = p.budgetMin; inW.value = p.maxWalk; inP.value = p.preferWalk;
-      $("#out-time").textContent = p.budgetMin + " min"; $("#out-walk").textContent = p.maxWalk + " m"; $("#out-prefer").textContent = p.preferWalk + " m";
-      track(inT, +inT.min, +inT.max, p.budgetMin, +inT.min, +inT.max);
-      track(inW, +inW.min, +inW.max, p.maxWalk, L.maxWalk[0], +inW.max);
-      track(inP, +inP.min, +inP.max, p.preferWalk, +inP.min, p.maxWalk);
-      inW.setAttribute("aria-valuetext", `${p.maxWalk} metri (minimo ${L.maxWalk[0]})`);
-      inP.setAttribute("aria-valuetext", `${p.preferWalk} metri (al massimo ${p.maxWalk}, il limite a piedi)`);
-      UI.syncFilters();
-    };
-    sync();
-    inT.addEventListener("input", () => { p.budgetMin = +inT.value; Prefs.fix(p); sync(); UI.recompute(); });
-    inW.addEventListener("input", () => { p.maxWalk = +inW.value; Prefs.fix(p); sync(); UI.recompute(); });
-    inP.addEventListener("input", () => { p.preferWish = Math.min(+inP.value, p.maxWalk); Prefs.fix(p); sync(); UI.recompute(); });
+    // controlli di viaggio (valori e aspetto in UI.syncControls)
+    const inT = $("#in-time"), inW = $("#in-walk"), inP = $("#in-prefer");
+    inT.addEventListener("input", () => { p.budgetMin = +inT.value; Prefs.fix(p); UI.syncControls(); UI.recompute(); });
+    inW.addEventListener("input", () => { p.maxWalk = +inW.value; Prefs.fix(p); UI.syncControls(); UI.recompute(); });
+    inP.addEventListener("input", () => { p.preferWish = Math.min(+inP.value, p.maxWalk); Prefs.fix(p); UI.syncControls(); UI.recompute(); });
     const chips = $("#mode-chips");
     MODES.forEach((m, i) => {
       const b = document.createElement("button");
-      b.type = "button"; b.className = "chip"; b.setAttribute("aria-pressed", String(p.modes[i]));
-      b.innerHTML = `<span class="sw" style="background:var(${m.css})"></span>${m.label}`;
-      b.addEventListener("click", () => { p.modes[i] = !p.modes[i]; b.setAttribute("aria-pressed", String(p.modes[i])); UI.syncFilters(); UI.recompute(); });
+      b.type = "button"; b.className = "chip"; b.dataset.mode = i;
+      b.innerHTML = `<span class="sw" style="background:var(${m.css})"></span><span class="nm"></span>`;
+      b.addEventListener("click", () => { p.modes[i] = !p.modes[i]; UI.syncControls(); UI.recompute(); });
       chips.appendChild(b);
     });
-    const seg = $("#seg-transfers");
-    const syncSeg = () => seg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.v === p.maxRides)));
-    seg.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; p.maxRides = +b.dataset.v; syncSeg(); UI.syncFilters(); UI.recompute(); });
-    syncSeg();
+    $("#seg-transfers").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; p.maxRides = +b.dataset.v; UI.syncControls(); UI.recompute(); });
+    UI.syncControls();
     // impostazioni di viaggio: scheda flottante, resta aperta anche con un itinerario (ogni modifica lo ricalcola)
     $("#btn-trip").addEventListener("click", () => UI.tripPanel($("#trip-panel").hidden));
     $("#trip-close").addEventListener("click", () => UI.tripPanel(false));
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#trip-panel").hidden && $("#settings").hidden) UI.tripPanel(false); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#trip-panel").hidden && $("#settings").hidden && !Search.open) UI.tripPanel(false); });
     $("#hint").hidden = !!p.hintSeen;
 
     $("#btn-locate").addEventListener("click", UI.locate);
     $("#view-main").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) UI.select(+b.dataset.route); });
     $("#view-detail").addEventListener("click", (e) => { if (e.target.closest("[data-back]")) UI.select(-1); });
-    $("#view-journey").addEventListener("click", (e) => {
-      const b = e.target.closest("[data-route]");
-      if (b) UI.select(+b.dataset.route);
-      else if (e.target.closest("[data-back]")) UI.closeJourney();
-      else if (e.target.closest("[data-ride-anyway]")) UI.setRideAnyway(true);
-      else if (e.target.closest("[data-walk-instead]")) UI.setRideAnyway(false);
+    const vj = $("#view-journey");
+    vj.addEventListener("click", (e) => {
+      const el = e.target.closest("[data-route], [data-back], [data-ride-anyway], [data-walk-instead], [data-fix-pick], [data-fix-apply], [data-fix-undo]"); if (!el) return;
+      const d = el.dataset;
+      if (d.route != null) UI.select(+d.route);
+      else if (d.back != null) UI.closeJourney();
+      else if (d.rideAnyway != null) UI.setRideAnyway(true);
+      else if (d.walkInstead != null) UI.setRideAnyway(false);
+      else if (d.fixPick != null) { state.fixPick = +d.fixPick; state.journeyFit = true; UI.drawMap(); UI.renderJourney(); }
+      else if (d.fixApply != null) UI.applyFix(+d.fixApply);
+      else if (d.fixUndo != null) UI.undoFix();
     });
+    vj.addEventListener("toggle", (e) => { if (e.target.classList && e.target.classList.contains("fix-more")) state.fixMore = e.target.open; }, true);
     $("#banner-x").addEventListener("click", () => ($("#banner").hidden = true));
     $("#status").addEventListener("click", () => Settings.open());
     $("#btn-settings").addEventListener("click", () => Settings.open());
     Sheet.init();
     MapView.centerOn(p.origin.lat, p.origin.lon, 14);
     Settings.init();
+    Search.init();
+    I18n.onChange(UI.relabel);
     setInterval(UI.status, 5000);
+  },
+  /** Nuova lingua: testi fissi, mappa e tutto ciò che è generato. */
+  relabel() {
+    I18n.apply(document); UI.syncControls(); MapView.relabel(); UI.status(); Boot.renderBanner(); UI._tripRes = null;
+    Search.render(); if (!$("#settings").hidden) Settings.open();
+    UI.recompute(true);
+  },
+  /**
+   * Controlli di viaggio allineati alle preferenze (dopo uno slider, un fix applicato o "Ripristina").
+   * I due slider a piedi hanno la stessa scala 0–1000 m (stessa posizione = stessa distanza); i valori non ammessi
+   * sono tratteggiati sulla barra e il cursore si ferma al limite:
+   * - "A piedi, massimo per tratto" non scende sotto 100 m;
+   * - "Preferisco camminare sotto" non supera il massimo a piedi e lo segue quando scende (Prefs.fix).
+   */
+  syncControls() {
+    const p = state.prefs, L = Prefs.LIMITS, inT = $("#in-time"), inW = $("#in-walk"), inP = $("#in-prefer");
+    const track = (el, v, okFrom, okTo) => {
+      const lo = +el.min, hi = +el.max, pc = (x) => ((x - lo) / (hi - lo) * 100).toFixed(2) + "%";
+      el.style.setProperty("--a", pc(okFrom)); el.style.setProperty("--v", pc(v)); el.style.setProperty("--b", pc(okTo));
+    };
+    inT.value = p.budgetMin; inW.value = p.maxWalk; inP.value = p.preferWalk;
+    $("#out-time").textContent = t("fmt.min", { n: p.budgetMin }); $("#out-walk").textContent = t("fmt.m", { n: p.maxWalk }); $("#out-prefer").textContent = t("fmt.m", { n: p.preferWalk });
+    track(inT, p.budgetMin, +inT.min, +inT.max);
+    track(inW, p.maxWalk, L.maxWalk[0], +inW.max);
+    track(inP, p.preferWalk, +inP.min, p.maxWalk);
+    inW.setAttribute("aria-valuetext", t("trip.walkValue", { v: p.maxWalk, min: L.maxWalk[0] }));
+    inP.setAttribute("aria-valuetext", t("trip.preferValue", { v: p.preferWalk, max: p.maxWalk }));
+    $("#mode-chips").querySelectorAll(".chip").forEach((b) => { const i = +b.dataset.mode; b.setAttribute("aria-pressed", String(p.modes[i])); b.querySelector(".nm").textContent = modeName(i); });
+    $("#seg-transfers").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.v === p.maxRides)));
+    UI.syncFilters();
   },
   setOrigin(lat, lon, pan) {
     state.prefs.origin = { lat, lon };
@@ -2387,11 +2999,11 @@ const UI = {
     WalkAreas.ensure(lat, lon);          // partenza fuori dalle aree scaricate → scarica la rete pedonale della zona
   },
   locate() {
-    if (!navigator.geolocation) return toast("Il browser non fornisce la posizione");
-    toast("Cerco la tua posizione…");
+    if (!navigator.geolocation) return toast(t("locate.unsupported"));
+    toast(t("locate.searching"));
     navigator.geolocation.getCurrentPosition(
-      (pos) => { UI.setOrigin(pos.coords.latitude, pos.coords.longitude, true); if (!WalkAreas.busy) toast("Partenza impostata sulla tua posizione"); },
-      (err) => toast(err.code === 1 ? "Permesso posizione negato: tieni premuto sulla mappa per scegliere la partenza" : "Posizione non disponibile: tieni premuto sulla mappa"),
+      (pos) => { UI.setOrigin(pos.coords.latitude, pos.coords.longitude, true); if (!WalkAreas.busy) toast(t("locate.done")); },
+      (err) => toast(err.code === 1 ? t("locate.denied") : t("locate.unavailable")),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
     );
   },
@@ -2400,14 +3012,18 @@ const UI = {
     clearTimeout(UI._t);
     UI._t = setTimeout(UI._compute, immediate ? 0 : 120);
   },
+  /** Opzioni di Engine.isochrone dalle preferenze attuali. */
+  isoOpts() {
+    const p = state.prefs;
+    return {
+      lat: p.origin.lat, lon: p.origin.lon, nowSec: nowSec(), budgetSec: p.budgetMin * 60, maxWalk: p.maxWalk, walkMps: walkMps(),
+      modes: p.modes, maxRides: p.maxRides, rt: state.rt.delays, walk: state.walk, preferWalk: p.preferWalk,
+    };
+  },
   _compute() {
     const p = state.prefs; Prefs.save(p);
     if (!state.idx) return;
-    const t0 = performance.now();
-    const res = Engine.isochrone(state.idx, {
-      lat: p.origin.lat, lon: p.origin.lon, nowSec: nowSec(), budgetSec: p.budgetMin * 60, maxWalk: p.maxWalk, walkMps: walkMps(),
-      modes: p.modes, maxRides: p.maxRides, rt: state.rt.delays, walk: state.walk, preferWalk: p.preferWalk,
-    });
+    const res = Engine.isochrone(state.idx, UI.isoOpts());
     state.result = res;
     if (state.selected >= 0 && !res.routes.has(state.selected)) state.selected = -1;
     const field = state.walk ? Walk.field(state.walk, state.idx, res) : null;
@@ -2415,7 +3031,7 @@ const UI = {
     UI.drawMap();
     UI.renderList(); UI.renderDetail(); UI.renderJourney(); UI.renderLegend();
     const nR = res.routes.size;
-    $("#sum-sub").textContent = `Area in ${p.budgetMin} min · ` + (nR ? `${nR} ${nR === 1 ? "linea" : "linee"} · ${res.reachedStops} fermate` : "nessun mezzo utile") + (state.walk ? "" : " · a piedi stimato");
+    $("#sum-sub").textContent = t("main.areaIn", { n: p.budgetMin }) + " · " + (nR ? t("n.lines", { n: nR }) + " · " + t("n.stops", { n: res.reachedStops }) : t("main.noRoutes")) + (state.walk ? "" : " · " + t("main.walkEstimated"));
   },
   /** Legenda delle fasce, solo se l'area è disegnata a fasce (prefs.isoBands). */
   renderLegend() {
@@ -2425,11 +3041,12 @@ const UI = {
   },
   /** Pallino delle impostazioni di viaggio: minuti nel badge, riassunto completo nell'etichetta (es. "20 min · 400 m a piedi · max 1 cambio"). */
   syncFilters() {
-    const p = state.prefs, on = MODES.filter((m, i) => p.modes[i]).map((m) => m.label.toLowerCase()), off = MODES.filter((m, i) => !p.modes[i]).map((m) => m.label.toLowerCase());
-    const modes = !off.length ? "" : !on.length ? " · nessun mezzo" : off.length <= on.length ? " · senza " + off.join(", ") : " · solo " + on.join(", ");
-    const sum = `${p.budgetMin} min · ${p.maxWalk} m a piedi · ${["nessun cambio", "max 1 cambio", "max 2 cambi"][p.maxRides - 1]}${modes}`;
-    $("#trip-badge").textContent = p.budgetMin + "′";
-    $("#btn-trip").setAttribute("aria-label", "Impostazioni di viaggio: " + sum); $("#btn-trip").title = sum;
+    const p = state.prefs, name = (i) => t("modeLower." + MODES[i].key), idx = MODES.map((m, i) => i);
+    const on = idx.filter((i) => p.modes[i]).map(name), off = idx.filter((i) => !p.modes[i]).map(name);
+    const modes = !off.length ? "" : " · " + (!on.length ? t("trip.noModes") : off.length <= on.length ? t("trip.without", { list: listOf(off) }) : t("trip.only", { list: listOf(on) }));
+    const sum = t("trip.summary", { min: p.budgetMin, walk: p.maxWalk, transfers: t("trip.maxTransfers", { n: p.maxRides - 1 }) }) + modes;
+    $("#trip-badge").textContent = t("fmt.minShort", { n: p.budgetMin });
+    $("#btn-trip").setAttribute("aria-label", t("trip.aria", { sum })); $("#btn-trip").title = sum;
   },
   /**
    * Apre/chiude la scheda delle impostazioni di viaggio. Aperta, il pannello in basso scende al minimo (su telefono)
@@ -2438,22 +3055,26 @@ const UI = {
   _sheetBefore: null,
   tripPanel(open) {
     if (open === !$("#trip-panel").hidden) return;
+    if (open) Search.close();
     $("#trip-panel").hidden = !open; $("#btn-trip").setAttribute("aria-expanded", String(open));
     if (open) { UI._sheetBefore = Sheet.state; Sheet.set("min"); UI.renderTripRes(); }
     else { if (UI._sheetBefore && Sheet.state === "min") Sheet.set(UI._sheetBefore); UI._sheetBefore = null; }
   },
-  /** Riga di risultato nella scheda di viaggio: l'itinerario scelto (arrivo, linee, a piedi) oppure l'area. Lampeggia se cambia. */
+  /** Riga di risultato nella scheda di viaggio: l'itinerario (o il fix consigliato) oppure l'area. Lampeggia se cambia. */
   renderTripRes() {
     const el = $("#trip-res"), idx = state.idx, res = state.result, j = state.journey; if (!el || $("#trip-panel").hidden) return;
     let html;
-    if (!idx || !res) html = "Calcolo…";
+    if (!idx || !res) html = t("common.computing");
     else if (state.view === "journey" && state.dest) {
-      const rides = j ? j.legs.filter((l) => l.type === "ride") : [];
-      html = !j ? "<b>Destinazione non raggiungibile</b> con queste impostazioni"
-        : `<b>Arrivi alle ${Time.clock(idx.dayStart, j.arrive)}</b> · ${fmtDur(j.arrive - res.nowSec)} · ` +
-          (rides.length ? rides.map((l) => `<span class="badge ${MODES[idx.routes.mode[l.route]].key}" style="background:${MapView.routeColor(idx, l.route)}">${esc(idx.routes.short[l.route])}</span>`).join("›") : state.walkAdv && state.walkAdv.suggest ? "meglio a piedi" : "solo a piedi") +
-          ` · ${fmtDist(j.walk)} a piedi`;
-    } else html = `<b>Area in ${state.prefs.budgetMin} min</b> · ${res.routes.size} linee · ${res.reachedStops} fermate`;
+      const f = state.fixes, best = f && f.list && f.list[0];
+      if (!j) html = !f || !f.list ? t("tripRes.outSearching") : best ? t("tripRes.outFix", { fix: esc(UI.fixText(best.changes)) }) : t("tripRes.out");
+      else {
+        const rides = j.legs.filter((l) => l.type === "ride");
+        html = t("tripRes.arrive", { time: Time.clock(idx.dayStart, j.arrive), dur: fmtDur(j.arrive - res.nowSec) }) + " · " +
+          (rides.length ? rides.map((l) => lineBadge(idx, l.route)).join("›") : state.walkAdv && state.walkAdv.suggest ? t("tripRes.betterWalk") : t("tripRes.onFoot")) +
+          " · " + t("n.walk", { dist: fmtDist(j.walk) });
+      }
+    } else html = t("tripRes.area", { min: state.prefs.budgetMin, lines: t("n.lines", { n: res.routes.size }), stops: t("n.stops", { n: res.reachedStops }) });
     if (UI._tripRes === html) return;
     const first = UI._tripRes == null; UI._tripRes = html; el.innerHTML = html;
     if (!first) { el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
@@ -2476,21 +3097,20 @@ const UI = {
     }
     near.sort((x, y) => x.c.boardTime - y.c.boardTime);
     far.sort((x, y) => x.best.round - y.best.round || x.best.boardTime - y.best.boardTime);
-    const badge = (r) => `<button type="button" class="badge ${MODES[idx.routes.mode[r]].key}" data-route="${r}" aria-label="Linea ${esc(idx.routes.short[r])}" style="background:${MapView.routeColor(idx, r)}">${esc(idx.routes.short[r])}</button>`;
     via.hidden = !far.length;
-    via.innerHTML = far.length ? `<span>${far.every((e) => e.best.round === 2) ? "Con un cambio" : "Con cambi"}:</span>${far.map((e) => badge(e.route)).join("")}` : "";
+    via.innerHTML = far.length ? `<span>${far.every((e) => e.best.round === 2) ? t("main.withOneTransfer") : t("main.withTransfers")}:</span>${far.map((e) => lineBadge(idx, e.route, true)).join("")}` : "";
     if (!near.length) {
-      ul.innerHTML = `<li class="empty">${far.length ? `Nessun passaggio da prendere a piedi entro ${state.prefs.budgetMin} min.` : "Nessuna linea raggiungibile con questi filtri. Prova ad aumentare il tempo o la distanza a piedi."}</li>`;
+      ul.innerHTML = `<li class="empty">${far.length ? t("main.noneWalkable", { n: state.prefs.budgetMin }) : t("main.noneAtAll")}</li>`;
       return;
     }
     ul.innerHTML = near.map(({ e, c }) => {
       const r = e.route, m = idx.routes.mode[r], live = !!(state.rt.delays && state.rt.delays.known[c.trip]);
-      const head = soften(idx.trips.head[c.trip] || "") || idx.routes.long[r] || MODES[m].label;
+      const head = soften(idx.trips.head[c.trip] || "") || idx.routes.long[r] || modeName(m);
       const after = Engine.nextDepartures(idx, r, idx.trips.dir[c.trip], c.boardStop, c.boardTime, 1, state.rt.delays)[0];
       return `<li><button class="line-item" type="button" data-route="${r}">
-        <span class="badge ${MODES[m].key}" style="background:${MapView.routeColor(idx, r)}">${esc(idx.routes.short[r])}</span>
-        <span class="li-main"><span class="t">→ ${esc(head)}</span><span class="s">${esc(stopName(idx, c.boardStop))} · ${fmtDist(c.walk || 0)} a piedi</span></span>
-        <span class="li-when">${fmtMin(c.boardTime - res.nowSec)}${live ? '<span class="live-tag">live</span>' : ""}${after ? `<small>poi ${fmtMin(after.dep - res.nowSec)}</small>` : ""}</span>
+        ${lineBadge(idx, r)}
+        <span class="li-main"><span class="t">${t("main.towards", { head: esc(head) })}</span><span class="s">${t("main.stopWalk", { stop: esc(stopName(idx, c.boardStop)), dist: fmtDist(c.walk || 0) })}</span></span>
+        <span class="li-when">${fmtMin(c.boardTime - res.nowSec)}${live ? `<span class="live-tag">${t("main.live")}</span>` : ""}${after ? `<small>${t("main.then", { min: fmtMin(after.dep - res.nowSec) })}</small>` : ""}</span>
       </button></li>`;
     }).join("");
   },
@@ -2499,7 +3119,6 @@ const UI = {
     $("#view-main").hidden = view !== "main"; $("#view-detail").hidden = view !== "detail"; $("#view-journey").hidden = view !== "journey";
     $("#sheet-body").scrollTop = 0;
   },
-  /** Mappa secondo la vista: itinerario, oppure linee utili (con l'eventuale linea selezionata). */
   /**
    * Mezzi da disegnare (live e/o stimati dall'orario, secondo le impostazioni):
    * - linea selezionata o itinerario (routes): tutti i mezzi di quelle linee, stimati compresi;
@@ -2512,26 +3131,30 @@ const UI = {
     const list = live.concat(est);
     return routes ? list.filter((v) => routes.has(v.route)) : Realtime.approaching(idx, res, list, state.rt.delays);
   },
+  /** Mappa secondo la vista: itinerario (o il fix scelto se la destinazione è fuori area), oppure linee utili (con l'eventuale linea selezionata). */
   drawMap() {
     const idx = state.idx, res = state.result; if (!idx || !res) return;
     if (state.view === "journey" && state.dest) {
       // itinerario coi mezzi + confronto con il percorso tutto a piedi: se i mezzi convengono poco si mostra quello a piedi
-      // (l'utente può comunque scegliere i mezzi: state.rideAnyway)
-      const ride = Engine.journey(idx, res, state.dest.lat, state.dest.lon), adv = Engine.walkAdvice(idx, res, ride, state.dest.lat, state.dest.lon);
-      state.walkAdv = adv; state.rideJourney = ride;
-      state.journey = adv && adv.suggest && !state.rideAnyway ? adv.walk : ride;
-      const pts = MapView.drawJourney(idx, state.journey, state.dest);
-      const rides = state.journey ? state.journey.legs.filter((l) => l.type === "ride") : [];
+      // (l'utente può comunque scegliere i mezzi: state.rideAnyway); fuori area: il fix scelto (state.fixPick)
+      const d = state.dest, plan = Engine.plan(idx, res, d.lat, d.lon, state.rideAnyway, state.walkOnly);
+      state.walkAdv = plan.adv; state.rideJourney = plan.ride; state.journey = plan.best;
+      let shown = plan.best;
+      if (!shown) { const f = UI.loadFixes(), x = f.list && (f.list[state.fixPick] || f.list[0]); shown = x ? x.journey : null; }
+      else state.fixes = null;
+      const pts = MapView.drawJourney(idx, shown, d);
+      const rides = shown ? shown.legs.filter((l) => l.type === "ride") : [];
       const focus = { routes: new Set(rides.map((l) => l.route)), trips: new Set(rides.map((l) => l.trip)) };
       MapView.drawVehicles(idx, UI.vehicles(focus.routes), res, -1, focus);
-      if (state.journeyFit) { state.journeyFit = false; pts.push([state.prefs.origin.lat, state.prefs.origin.lon]); MapView.fitPoints(pts); }
+      // fuori area: si inquadra quando ci sono le soluzioni (o si sa che non ce ne sono)
+      if (state.journeyFit && (plan.best || (state.fixes && state.fixes.list))) { state.journeyFit = false; pts.push([state.prefs.origin.lat, state.prefs.origin.lon]); MapView.fitPoints(pts); }
     } else {
       MapView.drawLines(idx, res, state.selected);
       MapView.drawVehicles(idx, UI.vehicles(state.selected >= 0 ? new Set([state.selected]) : null), res, state.selected);
     }
   },
   select(r) {
-    state.selected = r; state.dest = null; state.journey = null;
+    state.selected = r; UI.resetDest();
     UI.show(r >= 0 ? "detail" : "main");
     if (state.idx && state.result) {
       UI.drawMap();
@@ -2539,87 +3162,172 @@ const UI = {
     }
     UI.renderDetail(); UI.renderJourney();
   },
-  /** Tocco sulla mappa: se il punto è raggiungibile mostra come arrivarci. */
+  /** Tocco sulla mappa: come arrivarci (fuori dall'area, le soluzioni per arrivarci). */
   tapPoint(lat, lon) {
     if (!state.idx || !state.result) return;
-    if (!Engine.journey(state.idx, state.result, lat, lon)) { toast(`Fuori dall'area raggiungibile in ${state.prefs.budgetMin} min`); return; }
-    state.dest = { lat, lon }; state.selected = -1; state.journeyFit = true; state.rideAnyway = false; UI.hintDone();
+    UI.hintDone(); Search.clear();
+    UI.goTo({ lat, lon });
+  },
+  /** Nuova destinazione (tocco o ricerca): itinerario se raggiungibile, altrimenti le soluzioni ("fix") per arrivarci. */
+  goTo(d) {
+    UI.resetDest(); state.dest = d; state.selected = -1; state.journeyFit = true;
     UI.show("journey");
     if (Sheet.state === "min" && $("#trip-panel").hidden) Sheet.set("mid");
     UI.drawMap(); UI.renderJourney(); UI.renderDetail();
   },
-  closeJourney() { state.dest = null; state.journey = null; state.walkAdv = null; state.rideAnyway = false; UI.show("main"); UI.drawMap(); UI.renderJourney(); },
+  resetDest() { state.dest = null; state.journey = null; state.walkAdv = null; state.rideAnyway = false; state.walkOnly = false; state.fixes = null; state.fixPick = 0; state.fixUndo = null; state.fixMore = false; },
+  closeJourney() { UI.resetDest(); Search.clear(); UI.show("main"); UI.drawMap(); UI.renderJourney(); },
   /** Passa tra l'itinerario a piedi consigliato e quello coi mezzi. */
   setRideAnyway(on) { state.rideAnyway = on; state.journeyFit = true; UI.drawMap(); UI.renderJourney(); },
+  /**
+   * Soluzioni per una destinazione fuori area (Engine.fixes), calcolate in differita (qualche centinaio di ms) e tenute
+   * finché non cambiano destinazione, partenza o impostazioni; dopo 2 minuti si ricalcolano (gli orari scorrono)
+   * mostrando intanto le vecchie. list = null finché non sono pronte.
+   */
+  loadFixes() {
+    const p = state.prefs, d = state.dest, o = p.origin, f = state.fixes;
+    const key = [d.lat, d.lon, o.lat, o.lon, p.budgetMin, p.maxWalk, p.preferWalk, p.maxRides, p.modes.join(), p.walkKmh, !!state.walk, state.idx.dateKey, state.idx.source].join("|");
+    if (f && f.key === key && (f.pending || Date.now() - f.at < 120000)) return f;
+    const keep = f && f.key === key ? f.list : null;
+    state.fixes = { key, at: Date.now(), list: keep, pending: true };
+    if (!keep) { state.fixPick = 0; state.fixMore = false; }
+    clearTimeout(UI._fixT);
+    UI._fixT = setTimeout(() => {
+      if (!state.fixes || state.fixes.key !== key || !state.idx || !state.dest) return;
+      const L = Prefs.LIMITS; let list = [];
+      try { list = Engine.fixes(state.idx, UI.isoOpts(), state.dest.lat, state.dest.lon, { budgetMin: L.budgetMin, maxWalk: L.maxWalk, maxRides: L.maxRides, preferWish: p.preferWish }); }
+      catch (e) { console.error(e); }
+      state.fixes = { key, at: Date.now(), list, pending: false };
+      if (state.fixPick >= list.length) state.fixPick = 0;
+      UI.drawMap(); UI.renderJourney();
+    }, 250);
+    return state.fixes;
+  },
+  /** Cosa cambia un fix rispetto alle impostazioni from, es. "Tempo 20 → 35 min · A piedi 400 → 600 m per tratto". */
+  fixText(c, from = state.prefs) {
+    const out = [];
+    if (c.walkOnly) out.push(t("fix.walkOnly"));
+    if (c.budgetMin != null) out.push(t("fix.time", { from: from.budgetMin, to: c.budgetMin }));
+    if (c.maxWalk != null) out.push(t("fix.walk", { from: from.maxWalk, to: c.maxWalk }));
+    if (c.maxRides != null) out.push(t("fix.transfers", { n: c.maxRides - 1 }));
+    if (c.modes) out.push(t("fix.modes", { list: listOf(c.modes.map((on, i) => (on && !from.modes[i] ? t("modeLower." + MODES[i].key) : null)).filter(Boolean)) }));
+    return out.join(" · ");
+  },
+  /** Applica un fix: nuove impostazioni di viaggio (slider compresi), si ricalcolano area e itinerario. */
+  applyFix(i) {
+    const f = state.fixes && state.fixes.list && state.fixes.list[i]; if (!f) return;
+    const p = state.prefs, c = f.changes;
+    state.fixUndo = { prefs: { budgetMin: p.budgetMin, maxWalk: p.maxWalk, preferWish: p.preferWish, maxRides: p.maxRides, modes: p.modes.slice() }, changes: c };
+    for (const k of ["budgetMin", "maxWalk", "maxRides"]) if (c[k] != null) p[k] = c[k];
+    if (c.modes) p.modes = c.modes.slice();
+    const what = UI.fixText(c, state.fixUndo.prefs);
+    state.walkOnly = !!c.walkOnly; state.fixes = null; state.journeyFit = true;
+    Prefs.fix(p); UI.syncControls(); UI.recompute(true);
+    toast(t("fix.applied", { what }));
+  },
+  /** "Ripristina": impostazioni di prima dell'ultimo fix (la destinazione torna fuori area, con le sue soluzioni). */
+  undoFix() {
+    const u = state.fixUndo; if (!u) return;
+    Object.assign(state.prefs, u.prefs, { modes: u.prefs.modes.slice() });
+    state.walkOnly = false; state.fixUndo = null; state.journeyFit = true;
+    Prefs.fix(state.prefs); UI.syncControls(); UI.recompute(true);
+  },
+  /** Riquadro della destinazione fuori area: le soluzioni, la consigliata in evidenza e le altre sotto (toccandone una si vede sulla mappa). */
+  fixesHtml() {
+    const f = state.fixes, p = state.prefs, idx = state.idx, res = state.result, L = Prefs.LIMITS;
+    const meta = !f || !f.list ? t("fix.searching") : f.list.length ? t("fix.outMeta")
+      : t("fix.none", { min: L.budgetMin[1], walk: fmtDist(L.maxWalk[1]), transfers: t("n.transfers", { n: L.maxRides - 1 }) });
+    let html = `<div class="board-card"><span class="big">${t("fix.outTitle", { min: p.budgetMin })}</span><span class="meta">${meta}</span></div>`;
+    if (!f || !f.list || !f.list.length) return html;
+    const card = (x, i) => {
+      const j = x.journey, rides = j.legs.filter((l) => l.type === "ride"), sel = i === state.fixPick;
+      return `<li class="fix${sel ? " sel" : ""}">
+        <button class="fix-main" type="button" data-fix-pick="${i}" aria-pressed="${sel}" title="${esc(t("fix.preview"))}">
+          ${i === 0 ? `<span class="fix-tag">${t("fix.best")}</span>` : ""}
+          <span class="fix-ch">${esc(UI.fixText(x.changes))}</span>
+          <span class="fix-res">${t("fix.result", { time: Time.clock(idx.dayStart, j.arrive), dur: fmtDur(j.arrive - res.nowSec) })} · ${rides.length ? rides.map((l) => lineBadge(idx, l.route)).join("›") : t("tripRes.onFoot")} · ${t("n.walk", { dist: fmtDist(j.walk) })}</span>
+        </button>
+        <button class="btn primary" type="button" data-fix-apply="${i}">${t("common.apply")}</button>
+      </li>`;
+    };
+    const [best, ...others] = f.list;
+    html += `<ol class="fixes">${card(best, 0)}</ol>`;
+    if (others.length) html += `<details class="fix-more"${state.fixMore || state.fixPick > 0 ? " open" : ""}><summary>${t("fix.others", { n: others.length })}</summary><ol class="fixes">${others.map((x, k) => card(x, k + 1)).join("")}</ol></details>`;
+    return html;
+  },
   /** Riquadro del confronto con il percorso tutto a piedi (Engine.walkAdvice). */
   walkAdviceHtml() {
     const a = state.walkAdv, r = state.rideJourney, idx = state.idx; if (!a || !r) return "";
     const w = a.walk, names = r.legs.filter((l) => l.type === "ride").map((l) => esc(idx.routes.short[l.route])).join(" › ");
-    const gain = a.gainSec >= 60 ? `solo ${fmtDur(a.gainSec)} prima` : a.gainSec > -60 ? "più o meno alla stessa ora" : `${fmtDur(-a.gainSec)} dopo`;
-    const sched = a.live ? "" : " Gli orari dei mezzi non sono in tempo reale.";
+    const dur = fmtDur(w.arrive - state.result.nowSec), dist = fmtDist(w.walk);
+    const gain = a.gainSec >= 60 ? t("adv.onlyEarlier", { dur: fmtDur(a.gainSec) }) : a.gainSec > -60 ? t("adv.sameTime") : t("adv.later", { dur: fmtDur(-a.gainSec) });
+    const sched = a.live ? "" : " " + t("adv.notLive");
     if (a.suggest && !state.rideAnyway)
-      return `<div class="advice"><b>Meglio a piedi:</b> ${fmtDur(w.arrive - state.result.nowSec)} e ${fmtDist(w.walk)}. Con i mezzi (${names}) arriveresti ${gain} e cammineresti comunque ${fmtDist(r.walk)}.${sched}
-        <button class="linkish" type="button" data-ride-anyway>Vedi con i mezzi</button></div>`;
-    if (a.suggest) return `<div class="advice"><b>Consigliato a piedi:</b> ${fmtDur(w.arrive - state.result.nowSec)} e ${fmtDist(w.walk)}. <button class="linkish" type="button" data-walk-instead>Torna a piedi</button></div>`;
-    const late = w.arrive > state.result.end ? ", oltre il tempo a disposizione" : "";
-    return `<p class="advice-min">Tutto a piedi: ${fmtDur(w.arrive - state.result.nowSec)} e ${fmtDist(w.walk)}${late}. Con i mezzi guadagni ${a.gainSec >= 60 ? fmtDur(a.gainSec) : "poco tempo"} e ${fmtDist(Math.max(0, a.savedM))} a piedi.</p>`;
+      return `<div class="advice">${t("adv.better", { dur, dist, names, gain, walked: fmtDist(r.walk) })}${sched}
+        <button class="linkish" type="button" data-ride-anyway>${t("adv.rideAnyway")}</button></div>`;
+    if (a.suggest) return `<div class="advice">${t("adv.recommended", { dur, dist })} <button class="linkish" type="button" data-walk-instead>${t("adv.walkInstead")}</button></div>`;
+    const late = w.arrive > state.result.end ? t("adv.overBudget") : "";
+    return `<p class="advice-min">${t("adv.compare", { dur, dist, late, gain: a.gainSec >= 60 ? fmtDur(a.gainSec) : t("adv.littleTime"), saved: fmtDist(Math.max(0, a.savedM)) })}</p>`;
   },
   renderJourney() {
     UI.renderTripRes();
-    const box = $("#view-journey"), idx = state.idx, res = state.result, j = state.journey;
-    if (state.view !== "journey" || !idx || !res || !state.dest) { box.innerHTML = ""; return; }
+    const box = $("#view-journey"), idx = state.idx, res = state.result, j = state.journey, d = state.dest;
+    if (state.view !== "journey" || !idx || !res || !d) { box.innerHTML = ""; return; }
     const clock = (s) => Time.clock(idx.dayStart, s);
-    const head = `<div class="detail-head"><button class="back" type="button" data-back>← Indietro</button><h3>Come arrivarci</h3></div>`;
-    if (!j) {
-      box.innerHTML = head + `<div class="board-card"><span class="big">Non più raggiungibile</span><span class="meta">Con i filtri attuali questo punto non si raggiunge entro ${state.prefs.budgetMin} min. Aumenta il tempo o la distanza a piedi, oppure tocca un altro punto.</span></div>`;
-      return;
-    }
+    const head = `<div class="detail-head"><button class="back" type="button" data-back>${t("common.back")}</button><h3>${esc(d.name || t("journey.title"))}</h3></div>` +
+      (d.name && d.sub ? `<p class="dest-sub">${esc(d.sub)}</p>` : "");
+    const u = state.fixUndo, undo = u ? `<p class="fix-note">${t("fix.note", { what: esc(UI.fixText(u.changes, u.prefs)) })} <button class="linkish" type="button" data-fix-undo>${t("common.undo")}</button></p>` : "";
+    if (!j) { box.innerHTML = head + undo + UI.fixesHtml(); return; }
     const rides = j.legs.filter((l) => l.type === "ride");
-    const badge = (r) => `<button type="button" class="badge ${MODES[idx.routes.mode[r]].key}" data-route="${r}" aria-label="Linea ${esc(idx.routes.short[r])}: mostra il percorso" style="background:${MapView.routeColor(idx, r)}">${esc(idx.routes.short[r])}</button>`;
+    const badge = (r) => lineBadge(idx, r, true, t("line.showAria", { short: esc(idx.routes.short[r]) }));
     const stopTxt = (s) => { const L = stopLabel(idx, s); return `<b>${esc(L.name)}</b>${L.code ? ` <span class="code">${esc(L.code)}</span>` : ""}`; };
     const leaveIn = j.leave - res.nowSec;
-    let html = head + `<div class="board-card">
-      <span class="big">Arrivi alle ${clock(j.arrive)} · ${fmtDur(j.arrive - res.nowSec)}</span>
-      <span class="meta">${rides.length ? `Esci entro le ${clock(j.leave)}${leaveIn >= 60 ? ` (tra ${fmtDur(leaveIn)})` : ""} · ${rides.length === 1 ? "1 mezzo, nessun cambio" : `${rides.length} mezzi, ${rides.length - 1} ${rides.length === 2 ? "cambio" : "cambi"}`}` : "Ci arrivi a piedi"} · ${fmtDist(j.walk)} a piedi</span>
+    const meta = rides.length
+      ? `${t("journey.leaveBy", { time: clock(j.leave) })}${leaveIn >= 60 ? " " + t("journey.leaveIn", { dur: fmtDur(leaveIn) }) : ""} · ${rides.length === 1 ? t("journey.oneRide") : t("journey.rides", { rides: t("n.rides", { n: rides.length }), transfers: t("n.transfers", { n: rides.length - 1 }) })}`
+      : t("journey.onFoot");
+    let html = head + undo + `<div class="board-card">
+      <span class="big">${t("journey.arrive", { time: clock(j.arrive), dur: fmtDur(j.arrive - res.nowSec) })}</span>
+      <span class="meta">${meta} · ${t("n.walk", { dist: fmtDist(j.walk) })}</span>
       ${rides.length ? `<span class="j-chain">${rides.map((l) => badge(l.route)).join('<span class="j-arrow" aria-hidden="true">›</span>')}</span>` : ""}
     </div>
     ${UI.walkAdviceHtml()}
-    ${rides.length ? `<p class="jkey"><span class="k">Sulla mappa: ${arrowSvg(45)} dove va il mezzo (sali)</span><span class="k"><span class="stop-mark"></span> dove scendi</span><span class="k">Tocca un'etichetta per il nome della fermata</span></p>` : ""}
+    ${rides.length ? `<p class="jkey"><span class="k">${t("journey.keyBoard", { arrow: arrowSvg(45) })}</span><span class="k"><span class="stop-mark"></span> ${t("journey.keyAlight")}</span><span class="k">${t("journey.keyTap")}</span></p>` : ""}
     <ol class="itin">`;
     const { stop, time } = idx.tstops;
-    let t = rides.length ? j.leave : res.nowSec;
+    let tt = rides.length ? j.leave : res.nowSec;
     j.legs.forEach((l, i) => {
       if (l.type === "walk") {
-        const dur = l.arr - l.dep, dep = i === 0 ? t : l.dep;
-        const what = (i > 0 && l.to.stop != null ? "Cambio a piedi" : "Cammina") + (l.estimated ? " circa" : "");
-        html += `<li class="it it-walk"><span class="it-ic">${ICON_WALK}</span><div class="it-body"><div><b>${what} ${fmtDist(l.dist)}</b> · ${fmtDur(dur)}</div><div class="it-sub">${l.to.stop != null ? "fino a " + stopTxt(l.to.stop) : "fino al punto scelto"}</div></div><time>${clock(dep)}</time></li>`;
-        t = dep + dur;
+        const dur = l.arr - l.dep, dep = i === 0 ? tt : l.dep;
+        const what = (i > 0 && l.to.stop != null ? t("journey.walkTransfer") : t("journey.walk")) + (l.estimated ? " " + t("journey.approx") : "");
+        const to = l.to.stop != null ? t("journey.toStop", { stop: stopTxt(l.to.stop) }) : d.name ? t("journey.toPlace", { name: `<b>${esc(d.name)}</b>` }) : t("journey.toPoint");
+        html += `<li class="it it-walk"><span class="it-ic">${ICON_WALK}</span><div class="it-body"><div><b>${what} ${fmtDist(l.dist)}</b> · ${fmtDur(dur)}</div><div class="it-sub">${to}</div></div><time>${clock(dep)}</time></li>`;
+        tt = dep + dur;
         return;
       }
-      const wait = l.dep - t;
-      if (wait >= 60) html += `<li class="it it-wait"><span class="it-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span><div class="it-body">Attesa ${fmtDur(wait)}</div></li>`;
+      const wait = l.dep - tt;
+      if (wait >= 60) html += `<li class="it it-wait"><span class="it-ic">${ICON_CLOCK}</span><div class="it-body">${t("journey.wait", { dur: fmtDur(wait) })}</div></li>`;
       const color = MapView.routeColor(idx, l.route), m = idx.routes.mode[l.route];
       const next = Engine.nextDepartures(idx, l.route, idx.trips.dir[l.trip], l.from, l.dep, 2, state.rt.delays);
       const veh = state.prefs.vehLive ? state.rt.vehicles.find((v) => v.trip === l.trip) : null;
       const dl = l.dep - time[l.kFrom];
       let rows = "";
       for (let k = l.kFrom + 1; k < l.kTo; k++) rows += `<li><span class="node"></span><span>${esc(stopName(idx, stop[k]))}</span><time>${clock(time[k] + dl)}</time></li>`;
-      const nStops = l.kTo - l.kFrom;
+      const nStops = l.kTo - l.kFrom, sd = t("journey.stopsDur", { stops: t("n.stops", { n: nStops }), dur: fmtDur(l.arr - l.dep) });
       html += `<li class="it it-ride" style="--line-c:${color}"><span class="it-ic">${badge(l.route)}</span><div class="it-body">
-        <div class="it-sub">${MODES[m].label} verso <b>${esc(soften(idx.trips.head[l.trip] || "") || idx.routes.long[l.route] || "capolinea")}</b></div>
-        <div class="it-stop"><span>Sali a ${stopTxt(l.from)}</span><time>${clock(l.dep)}</time></div>
-        <div class="it-meta">${l.dep - res.nowSec >= 60 ? `passa tra ${fmtDur(l.dep - res.nowSec)}` : "passa ora"}${l.live ? '<span class="live-tag">live</span>' : " · orario programmato"}${next.length ? ` · poi alle ${next.map((x) => clock(x.dep)).join(", ")}` : ""}</div>
-        ${veh ? `<div class="it-meta">Mezzo ${esc(veh.label || "")} visibile sulla mappa${veh.ageSec ? ` · posizione di ${veh.ageSec} s fa` : ""}</div>` : ""}
-        ${rows ? `<details class="it-more"><summary>${nStops} fermate · ${fmtDur(l.arr - l.dep)}</summary><ul class="stops" style="--line-c:${color}"><span class="rail"></span>${rows}</ul></details>` : `<div class="it-meta">${nStops} ${nStops === 1 ? "fermata" : "fermate"} · ${fmtDur(l.arr - l.dep)}</div>`}
-        <div class="it-stop"><span>Scendi a ${stopTxt(l.to)}</span><time>${clock(l.arr)}</time></div>
+        <div class="it-sub">${t("journey.towards", { mode: modeName(m), head: esc(soften(idx.trips.head[l.trip] || "") || idx.routes.long[l.route] || t("journey.terminus")) })}</div>
+        <div class="it-stop"><span>${t("journey.board", { stop: stopTxt(l.from) })}</span><time>${clock(l.dep)}</time></div>
+        <div class="it-meta">${l.dep - res.nowSec >= 60 ? t("journey.dueIn", { dur: fmtDur(l.dep - res.nowSec) }) : t("journey.dueNow")}${l.live ? `<span class="live-tag">${t("main.live")}</span>` : " · " + t("journey.scheduled")}${next.length ? " · " + t("journey.nextAt", { times: next.map((x) => clock(x.dep)).join(", ") }) : ""}</div>
+        ${veh ? `<div class="it-meta">${t("journey.vehOnMap", { label: esc(veh.label || "") })}${veh.ageSec ? " · " + t("journey.vehAge", { n: veh.ageSec }) : ""}</div>` : ""}
+        ${rows ? `<details class="it-more"><summary>${sd}</summary><ul class="stops" style="--line-c:${color}"><span class="rail"></span>${rows}</ul></details>` : `<div class="it-meta">${sd}</div>`}
+        <div class="it-stop"><span>${t("journey.alight", { stop: stopTxt(l.to) })}</span><time>${clock(l.arr)}</time></div>
       </div></li>`;
-      t = l.arr;
+      tt = l.arr;
     });
-    html += `<li class="it it-end"><span class="it-ic"><span class="dest"></span></span><div class="it-body"><b>Arrivo</b></div><time>${clock(j.arrive)}</time></li></ol>`;
+    html += `<li class="it it-end"><span class="it-ic"><span class="dest"></span></span><div class="it-body"><b>${t("journey.arrival")}</b></div><time>${clock(j.arrive)}</time></li></ol>`;
     const used = new Set(rides.map((l) => l.route));
     html += state.rt.alerts.filter((a) => [...a.routes].some((r) => used.has(r))).slice(0, 3)
       .map((a) => `<div class="alert-box"><strong>${esc(a.header)}</strong>${a.description ? "<br>" + esc(a.description.slice(0, 280)) : ""}</div>`).join("");
-    html += `<p class="hint">${j.estimated ? "Alcuni tratti a piedi sono stimati: manca la rete pedonale di quella zona (Impostazioni → Percorsi a piedi)." : "Tratti a piedi lungo le strade · dati © OpenStreetMap."} Tocca un altro punto per cambiare destinazione.</p>`;
+    html += `<p class="hint">${j.estimated ? t("journey.estimatedNote") : t("journey.osmNote")} ${t("journey.tapOther")}</p>`;
     box.innerHTML = html;
   },
   renderDetail() {
@@ -2633,25 +3341,25 @@ const UI = {
       const { start, stop, time } = idx.tstops, dl = state.rt.delays ? state.rt.delays.delay[c.trip] : 0;
       let rows = "", started = false;
       for (let k = start[c.trip]; k < start[c.trip + 1]; k++) {
-        const s = stop[k], t = time[k] + dl;
+        const s = stop[k], tm = time[k] + dl;
         if (s === c.boardStop) started = true;
         if (!started) continue;
-        const inside = t <= res.end;
-        rows += `<li class="${s === c.boardStop ? "board" : ""} ${inside ? "" : "out"}"><span class="node"></span><span>${esc(stopName(idx, s))}</span><time>${Time.clock(idx.dayStart, t)}</time></li>`;
+        const inside = tm <= res.end;
+        rows += `<li class="${s === c.boardStop ? "board" : ""} ${inside ? "" : "out"}"><span class="node"></span><span>${esc(stopName(idx, s))}</span><time>${Time.clock(idx.dayStart, tm)}</time></li>`;
       }
-      return `<div class="section-title" style="--line-c:${color}"><span class="dir-key d${idx.trips.dir[c.trip] & 1}" aria-hidden="true"></span>Verso ${esc(soften(idx.trips.head[c.trip] || "") || "capolinea")}</div><ul class="stops" style="--line-c:${color}"><span class="rail"></span>${rows}</ul>`;
+      return `<div class="section-title" style="--line-c:${color}"><span class="dir-key d${idx.trips.dir[c.trip] & 1}" aria-hidden="true"></span>${t("detail.towards", { head: esc(soften(idx.trips.head[c.trip] || "") || t("journey.terminus")) })}</div><ul class="stops" style="--line-c:${color}"><span class="rail"></span>${rows}</ul>`;
     }).join("");
-    const wait = b.boardTime - res.nowSec;
+    const wait = b.boardTime - res.nowSec, at = Time.clock(idx.dayStart, b.boardTime), stopB = esc(stopName(idx, b.boardStop));
     box.innerHTML = `
       <div class="detail-head">
-        <button class="back" type="button" data-back>← Indietro</button>
-        <span class="badge ${MODES[m].key}" style="background:${color}">${esc(idx.routes.short[r])}</span>
-        <h3>${esc(idx.routes.long[r] || MODES[m].label)}</h3>
+        <button class="back" type="button" data-back>${t("common.back")}</button>
+        ${lineBadge(idx, r)}
+        <h3>${esc(idx.routes.long[r] || modeName(m))}</h3>
       </div>
       <div class="board-card">
-        <span class="big">${b.round === 1 ? `Sali a ${esc(stopName(idx, b.boardStop))}` : `Raggiungibile con ${b.round - 1} ${b.round === 2 ? "cambio" : "cambi"}`}</span>
-        <span class="meta">${b.round === 1 ? `${Math.round(b.walk)} m a piedi · passa alle ${Time.clock(idx.dayStart, b.boardTime)} (${fmtMin(wait)})` : `Sali a ${esc(stopName(idx, b.boardStop))} alle ${Time.clock(idx.dayStart, b.boardTime)}`}${e.live ? " · orario aggiornato in tempo reale" : " · orario programmato"}</span>
-        <span class="meta">${vehicles ? `${vehicles} ${vehicles === 1 ? "mezzo" : "mezzi"} in linea visibili sulla mappa` : "Nessuna posizione live per questa linea"}</span>
+        <span class="big">${b.round === 1 ? t("detail.board", { stop: stopB }) : t("detail.withTransfers", { n: b.round - 1 })}</span>
+        <span class="meta">${b.round === 1 ? t("detail.boardMeta", { walk: fmtDist(b.walk), time: at, min: fmtMin(wait) }) : t("detail.boardAt", { stop: stopB, time: at })} · ${e.live ? t("detail.live") : t("detail.sched")}</span>
+        <span class="meta">${vehicles ? t("detail.vehicles", { n: vehicles }) : t("detail.noVehicles")}</span>
       </div>
       ${alerts.map((a) => `<div class="alert-box"><strong>${esc(a.header)}</strong>${a.description ? "<br>" + esc(a.description.slice(0, 280)) : ""}</div>`).join("")}
       ${stopsHtml}`;
@@ -2659,11 +3367,168 @@ const UI = {
   status() {
     const el = $("#status"), tx = $("#status-text");
     el.dataset.s = state.mode;
-    if (state.mode === "live") { const age = Math.round((Date.now() - state.rt.fetchedAt) / 1000); tx.textContent = `Live · ${age < 5 ? "ora" : age + " s fa"}`; }
-    else if (state.mode === "static") tx.textContent = "Solo orari programmati";
-    else if (state.mode === "demo") tx.textContent = "Demo";
-    else if (state.mode === "error") tx.textContent = "Dati non disponibili";
-    else tx.textContent = "Avvio…";
+    if (state.mode === "live") { const age = Math.round((Date.now() - state.rt.fetchedAt) / 1000); tx.textContent = t("status.live", { age: age < 5 ? t("status.now") : t("status.ago", { n: age }) }); }
+    else tx.textContent = t({ static: "status.static", demo: "status.demo", error: "status.error" }[state.mode] || "status.starting");
+  },
+};
+
+/* ---------------- Ricerca della destinazione ----------------
+   Fermate GTT dall'indice (subito, anche offline) + indirizzi, negozi e luoghi da Photon (OpenStreetMap, senza chiave,
+   CORS aperto: non passa dal proxy), limitati all'area delle fermate e favorendo quelli vicini alla partenza
+   (inviata arrotondata a ~1 km). Ricerche recenti in prefs.recent. Scelta → UI.goTo. */
+const Search = {
+  open: false, items: [], sel: -1, q: "", _t: 0, _ctl: null, remote: { q: "", list: [], state: "" },
+  init() {
+    const inp = $("#search-in");
+    inp.addEventListener("focus", () => Search.show());
+    inp.addEventListener("click", () => Search.show());
+    inp.addEventListener("input", () => { $("#search-x").hidden = !inp.value; Search.show(); Search.query(inp.value); });
+    inp.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); Search.move(e.key === "ArrowDown" ? 1 : -1); }
+      else if (e.key === "Escape") Search.close();
+    });
+    $("#search").addEventListener("submit", (e) => { e.preventDefault(); Search.pick(Search.items[Math.max(0, Search.sel)]); });
+    $("#search-x").addEventListener("click", () => {
+      Search.clear(); if (state.view === "journey" && state.dest && state.dest.name) UI.closeJourney();
+      inp.focus(); Search.query("");
+    });
+    $("#search-results").addEventListener("click", (e) => { const b = e.target.closest("[data-i]"); if (b) Search.pick(Search.items[+b.dataset.i]); });
+    // tocco fuori dalla ricerca: chiude (sulla mappa ci pensa MapView, così il tocco non diventa anche una destinazione)
+    document.addEventListener("pointerdown", (e) => { if (Search.open && !e.target.closest("#search, #search-panel, #map")) Search.close(); });
+    window.addEventListener("resize", () => { if (Search.open) Search.place(); });
+  },
+  show() {
+    if (Search.open) return;
+    Search.open = true; UI.tripPanel(false);
+    $("#topbar").classList.add("searching"); $("#search-panel").hidden = false; $("#search-in").setAttribute("aria-expanded", "true");
+    Search.place(); Search.query($("#search-in").value);
+  },
+  close() {
+    if (!Search.open) return;
+    Search.open = false; clearTimeout(Search._t); if (Search._ctl) { Search._ctl.abort(); Search._ctl = null; }
+    $("#topbar").classList.remove("searching"); $("#search-panel").hidden = true;
+    const inp = $("#search-in"); inp.setAttribute("aria-expanded", "false"); inp.removeAttribute("aria-activedescendant"); inp.blur();
+  },
+  clear() { $("#search-in").value = ""; $("#search-x").hidden = true; },
+  /** Su schermi larghi il pannello sta sotto il campo; su telefono occupa la larghezza (CSS). */
+  place() {
+    const el = $("#search-panel");
+    if (window.innerWidth < 700) { el.style.left = el.style.right = el.style.width = ""; return; }
+    const r = $("#search").getBoundingClientRect();
+    el.style.left = r.left + "px"; el.style.right = "auto"; el.style.width = Math.max(r.width, 380) + "px";
+  },
+  query(q) {
+    q = q.trim(); Search.q = q; Search.sel = -1;
+    clearTimeout(Search._t);
+    if (q.length >= Config.geocode.minChars) {
+      if (Search.remote.q !== q) {
+        if (Search._ctl) { Search._ctl.abort(); Search._ctl = null; }
+        Search.remote = { q, list: Search.remote.list, state: "loading" };     // i risultati vecchi restano finché arrivano i nuovi
+        Search._t = setTimeout(() => Search.fetch(q), Config.geocode.debounceMs);
+      }
+    } else Search.remote = { q: "", list: [], state: "" };
+    Search.render();
+  },
+  async fetch(q) {
+    const G = Config.geocode, o = state.prefs.origin, ctl = new AbortController(), u = new URL(Config.urls.geocode);
+    Search._ctl = ctl;
+    u.searchParams.set("q", q); u.searchParams.set("limit", G.fetch);
+    u.searchParams.set("lat", o.lat.toFixed(2)); u.searchParams.set("lon", o.lon.toFixed(2)); u.searchParams.set("zoom", 12); u.searchParams.set("location_bias_scale", 0.1);
+    u.searchParams.set("lang", I18n.geocodeLang);          // sempre: senza, Photon usa la lingua del browser
+    const bb = Search.bbox(); if (bb) u.searchParams.set("bbox", bb.join(","));
+    try {
+      const r = await fetch(u, { signal: ctl.signal }); if (!r.ok) throw new Error("HTTP " + r.status);
+      const js = await r.json(); if (Search.remote.q !== q) return;
+      Search.remote = { q, list: Search.fromPhoton(js.features || []), state: "ok" };
+    } catch (e) {
+      if (e.name === "AbortError" || Search.remote.q !== q) return;
+      Search.remote = { q, list: [], state: "error" };
+    }
+    Search.render();
+  },
+  /** Area della ricerca: fermate dell'indice ± Config.geocode.bboxPadDeg (calcolata una volta per indice). */
+  bbox() {
+    const idx = state.idx; if (!idx) return null;
+    if (Search._bb && Search._bb.idx === idx) return Search._bb.v;
+    let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity; const { lat, lon } = idx.stops;
+    for (let i = 0; i < lat.length; i++) { a = Math.min(a, lon[i]); b = Math.min(b, lat[i]); c = Math.max(c, lon[i]); d = Math.max(d, lat[i]); }
+    const pad = Config.geocode.bboxPadDeg, v = Number.isFinite(a) ? [a - pad, b - pad, c + pad, d + pad].map((x) => x.toFixed(4)) : null;
+    Search._bb = { idx, v }; return v;
+  },
+  /** Risultati Photon (GeoJSON) → { kind: "poi" | "place", name, sub, lat, lon, d }, i più pertinenti e vicini per primi. */
+  fromPhoton(feats) {
+    const o = state.prefs.origin, out = [], seen = new Set();
+    for (const f of feats) {
+      const p = f.properties || {}, c = f.geometry && f.geometry.coordinates; if (!c) continue;
+      const addr = [p.street, p.housenumber].filter(Boolean).join(" ");
+      const name = p.name || addr || p.city; if (!name) continue;
+      const sub = [p.name ? addr : "", p.locality, p.city].filter((x, i, a) => x && x !== name && a.indexOf(x) === i).join(", ");
+      const key = name + "|" + sub; if (seen.has(key)) continue; seen.add(key);
+      const poi = !!p.name && !["place", "highway", "boundary", "landuse"].includes(p.osm_key);
+      const d = Geo.dist(o.lat, o.lon, c[1], c[0]);
+      out.push({ kind: poi ? "poi" : "place", name, sub, lat: c[1], lon: c[0], d, score: out.length + d / 1000 / Config.geocode.kmPerRank });
+    }
+    return out.sort((a, b) => a.score - b.score).slice(0, Config.geocode.limit);
+  },
+  /** Fermate il cui nome contiene tutte le parole cercate (o con quel codice): una per nome, la più vicina alla partenza. */
+  stops(q) {
+    const idx = state.idx; if (!idx) return [];
+    const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    if (!Search._names || Search._names.idx !== idx)
+      Search._names = { idx, list: idx.stops.name.map((_, s) => { const L = stopLabel(idx, s); return { s, name: L.name, code: L.code, n: norm(L.name) }; }) };
+    const words = norm(q).split(/\s+/).filter(Boolean); if (!words.length) return [];
+    const o = state.prefs.origin, best = new Map();
+    for (const x of Search._names.list) {
+      if (x.code !== q && !words.every((w) => x.n.includes(w))) continue;
+      const la = idx.stops.lat[x.s], lo = idx.stops.lon[x.s], d = Geo.dist(o.lat, o.lon, la, lo), cur = best.get(x.n);
+      if (!cur || d < cur.d) best.set(x.n, { kind: "stop", name: x.name, code: x.code, lat: la, lon: lo, d, first: x.n.startsWith(words[0]) || x.code === q });
+    }
+    return [...best.values()].sort((a, b) => b.first - a.first || a.d - b.d).slice(0, 4);
+  },
+  stopSub: (code) => (code ? t("search.stop", { code }) : t("search.stopNoCode")),
+  render() {
+    if (!Search.open) return;
+    const q = Search.q, o = state.prefs.origin, items = [];
+    const icon = { stop: ICON_STOP, poi: ICON_POI, place: ICON_PIN, recent: ICON_CLOCK };
+    const row = (it, kind = it.kind) => {
+      const i = items.push(it) - 1;
+      return `<li><button type="button" class="res" role="option" id="sr-${i}" data-i="${i}" aria-selected="${i === Search.sel}"><span class="res-ic ${kind}">${icon[kind]}</span><span class="res-t"><b>${esc(it.name)}</b>${it.sub ? `<small>${esc(it.sub)}</small>` : ""}</span><span class="res-d">${fmtDist(Geo.dist(o.lat, o.lon, it.lat, it.lon))}</span></button></li>`;
+    };
+    let html = "";
+    if (!q) {
+      const rec = state.prefs.recent;
+      if (rec.length) html += `<li class="grp">${t("search.recent")}</li>` + rec.map((r) => row({ ...r, sub: r.kind === "stop" ? Search.stopSub(r.code) : r.sub }, "recent")).join("");
+    } else {
+      html += (q.length >= 2 ? Search.stops(q) : []).map((s) => row({ ...s, sub: Search.stopSub(s.code) })).join("");
+      const R = Search.remote;
+      if (q.length >= Config.geocode.minChars) {
+        html += R.list.map((p) => row(p)).join("");
+        if (R.state === "loading" && !R.list.length) html += `<li class="msg">${t("search.searching")}</li>`;
+        else if (R.state === "error") html += `<li class="msg">${t("search.error")}</li>`;
+        else if (R.state === "ok" && !items.length) html += `<li class="msg">${t("search.none")}</li>`;
+      }
+    }
+    Search.items = items;
+    $("#search-results").innerHTML = html;
+    $("#search-foot").textContent = q.length >= Config.geocode.minChars ? t("search.foot") : "";
+    const inp = $("#search-in");
+    if (Search.sel >= 0) inp.setAttribute("aria-activedescendant", "sr-" + Search.sel); else inp.removeAttribute("aria-activedescendant");
+  },
+  move(dir) {
+    const n = Search.items.length; if (!n) return;
+    Search.sel = Search.sel < 0 ? (dir > 0 ? 0 : n - 1) : (Search.sel + dir + n) % n;
+    Search.render();
+    const el = document.getElementById("sr-" + Search.sel); if (el) el.scrollIntoView({ block: "nearest" });
+  },
+  pick(it) {
+    if (!it) return;
+    const place = { lat: it.lat, lon: it.lon, name: it.name, sub: it.kind === "stop" ? Search.stopSub(it.code) : it.sub || "", kind: it.kind, code: it.code || "" };
+    const keep = state.prefs.recent.filter((r) => !(r.name === place.name && Geo.dist(r.lat, r.lon, place.lat, place.lon) < 50));
+    state.prefs.recent = [{ lat: place.lat, lon: place.lon, name: place.name, sub: place.kind === "stop" ? "" : place.sub, kind: place.kind, code: place.code }, ...keep].slice(0, 6);
+    Prefs.save(state.prefs);
+    $("#search-in").value = it.name; $("#search-x").hidden = false;
+    Search.close(); UI.hintDone();
+    UI.goTo(place);
   },
 };
 
@@ -2704,14 +3569,14 @@ const WalkAreas = {
   async add(lat, lon, km, auto) {
     if (this.busy) return false;
     const index = await this.fetchIndex();
-    if (!index) { if (!auto) toast("Rete pedonale non raggiungibile: apri l'app dal sito pubblicato"); return false; }
+    if (!index) { if (!auto) toast(t("walk.noSource")); return false; }
     const keys = this.tilesFor(index, lat, lon, km);
-    if (!keys.length) { toast("Nessun dato sui percorsi a piedi per questa zona"); return false; }
+    if (!keys.length) { toast(t("walk.noData")); return false; }
     this.busy = true;
     try {
       const stored = new Set((await Cache.get("walk:stored")) || []), missing = keys.filter((k) => !stored.has(k));
       const total = missing.reduce((a, k) => a + index.tiles[k], 0); let got = 0, done = 0;
-      const msg = () => `Scarico i percorsi a piedi della zona · ${(got / 1e6).toFixed(1)} di ${(total / 1e6).toFixed(1)} MB`;
+      const msg = () => t("walk.downloading", { got: fmtMb(got), total: fmtMb(total) });
       if (missing.length) loader(msg(), 0);
       const queue = missing.slice();
       await Promise.all([0, 1, 2, 3].map(async () => {
@@ -2726,10 +3591,10 @@ const WalkAreas = {
       this.areas = this.areas.filter((a) => !(Geo.dist(a.lat, a.lon, lat, lon) < 300 && a.radiusKm <= km)).concat(area);
       await Cache.set("walk:areas", this.areas);
       await this.load(); UI.recompute(true); Settings.renderAreas();
-      toast(`Percorsi a piedi pronti per ${area.name}`);
+      toast(t("walk.ready", { name: area.name }));
       return true;
     } catch (e) {
-      console.error(e); toast("Download dei percorsi a piedi non riuscito"); return false;
+      console.error(e); toast(t("walk.failed")); return false;
     } finally { this.busy = false; loader(null); }
   },
   async remove(id) {
@@ -2757,8 +3622,8 @@ const WalkAreas = {
   attach() { state.walk = this.graph && state.idx ? Walk.attach(this.graph, state.idx) : null; },
   nameFor(lat, lon) {
     const idx = state.idx;
-    if (idx && idx.source !== "demo") { const near = Engine.grid(idx).near(lat, lon, 1500); let bs = -1, bd = Infinity; for (let i = 0; i < near.length; i += 2) if (near[i + 1] < bd) { bd = near[i + 1]; bs = near[i]; } if (bs >= 0) return "zona " + stopName(idx, bs); }
-    return `zona ${lat.toFixed(3)}, ${lon.toFixed(3)}`;
+    if (idx && idx.source !== "demo") { const near = Engine.grid(idx).near(lat, lon, 1500); let bs = -1, bd = Infinity; for (let i = 0; i < near.length; i += 2) if (near[i + 1] < bd) { bd = near[i + 1]; bs = near[i]; } if (bs >= 0) return t("walk.zone", { name: stopName(idx, bs) }); }
+    return t("walk.zone", { name: `${lat.toFixed(3)}, ${lon.toFixed(3)}` });
   },
 };
 
@@ -2801,13 +3666,13 @@ const Settings = {
     $("#btn-close-settings").addEventListener("click", Settings.close);
     $("#settings").addEventListener("click", (e) => { if (e.target.id === "settings") Settings.close(); });
     $("#btn-copy-worker").addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText($("#worker-code").textContent); toast("Codice copiato"); }
-      catch { const r = document.createRange(); r.selectNodeContents($("#worker-code")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast("Selezionato: copia con il menu"); }
+      try { await navigator.clipboard.writeText($("#worker-code").textContent); toast(t("proxyHow.copied")); }
+      catch { const r = document.createRange(); r.selectNodeContents($("#worker-code")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast(t("proxyHow.selected")); }
     });
     $("#btn-test").addEventListener("click", Settings.test);
     $("#btn-refresh-static").addEventListener("click", async () => {
       Settings.close(); state.prefs.demo = false; Prefs.save(state.prefs);
-      if (await Data.loadStatic(true)) await Boot.start(); else toast("Download non riuscito: controlla il proxy");
+      if (await Data.loadStatic(true)) await Boot.start(); else toast(t("settings.downloadFailed"));
     });
     $("#in-demo").addEventListener("change", async (e) => { state.prefs.demo = e.target.checked; Prefs.save(state.prefs); Settings.close(); await Boot.start(); });
     $("#in-speed").addEventListener("change", (e) => { state.prefs.walkKmh = +e.target.value; UI.recompute(); });
@@ -2821,49 +3686,62 @@ const Settings = {
     $("#in-walk-base").addEventListener("change", (e) => { state.prefs.walkBase = e.target.value.trim(); Prefs.save(state.prefs); WalkAreas.index = null; Settings.renderAreas(); });
     $("#in-carto").addEventListener("change", (e) => {
       state.prefs.cartoKey = e.target.value.trim(); Prefs.save(state.prefs); MapView.refreshTiles();
-      toast(state.prefs.cartoKey ? "Mappe CARTO attivate" : "Uso le mappe OpenFreeMap");
+      toast(state.prefs.cartoKey ? t("settings.cartoOn") : t("settings.cartoOff"));
     });
+    // aspetto e lingua: il tema cambia subito (mappa compresa), la lingua ridisegna tutti i testi (UI.relabel)
+    $("#seg-theme").addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      state.prefs.theme = b.dataset.v; Prefs.save(state.prefs); Theme.apply(); Settings.syncLook(); MapView.refreshTiles(); UI.recompute(true);
+    });
+    $("#in-lang").addEventListener("change", (e) => { state.prefs.lang = e.target.value; Prefs.save(state.prefs); I18n.set(state.prefs.lang); Settings.syncLook(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#settings").hidden) Settings.close(); });
   },
   async open() {
+    Settings.syncLook();
     $("#in-proxy").value = state.prefs.proxy; Settings.renderProxy(); $("#in-carto").value = state.prefs.cartoKey || ""; $("#in-demo").checked = !!state.prefs.demo; $("#in-veh-live").checked = state.prefs.vehLive !== false; $("#in-veh-est").checked = state.prefs.vehScheduled !== false; $("#in-iso-bands").checked = !!state.prefs.isoBands;$("#in-speed").value = String(state.prefs.walkKmh);
     $("#test-result").textContent = "";
     $("#in-walk-radius").value = String(state.prefs.walkRadiusKm || 6); $("#in-walk-base").value = state.prefs.walkBase || "";
     Settings.renderAreas();
     const meta = await Cache.get("zipMeta");
-    $("#cache-info").textContent = meta ? `Orari GTT in cache: scaricati il ${new Date(meta.at).toLocaleString("it-IT")} (${(meta.size / 1e6).toFixed(1)} MB)` : "Nessun orario GTT in cache";
+    $("#cache-info").textContent = meta ? t("settings.cacheInfo", { date: I18n.dateTime(meta.at), mb: fmtMb(meta.size) }) : t("settings.noCache");
     $("#settings").hidden = false;
+  },
+  /** Tema e lingua scelti; nel selettore le lingue di I18n.LOCALES, ognuna col suo nome. */
+  syncLook() {
+    $("#seg-theme").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === state.prefs.theme)));
+    const sel = $("#in-lang");
+    sel.innerHTML = `<option value="auto">${esc(t("settings.langAuto", { name: I18n.autoName() }))}</option>` + I18n.list().map((l) => `<option value="${l.code}" lang="${l.code}">${esc(l.name)}</option>`).join("");
+    sel.value = state.prefs.lang;
   },
   close() { $("#settings").hidden = true; },
   async renderAreas() {
     const ul = $("#walk-areas"), st = $("#walk-status"); if (!ul) return;
     const A = WalkAreas.areas, base = WalkAreas.base();
-    const mb = (b) => (b / 1e6).toFixed(1).replace(".", ",") + " MB";
-    ul.innerHTML = A.length ? A.map((a) => `<li><span><b>${esc(state.idx && state.idx.source !== "demo" ? WalkAreas.nameFor(a.lat, a.lon) : a.name)}</b><small>raggio ${a.radiusKm} km · ${mb(a.bytes)} · scaricata il ${new Date(a.at).toLocaleDateString("it-IT")}</small></span><button class="btn" type="button" data-del-area="${esc(a.id)}">Elimina</button></li>`).join("")
-      : `<li class="empty">Nessuna area scaricata: i tratti a piedi sono stimati (linea d'aria × ${String(Walk.DETOUR).replace(".", ",")}).</li>`;
+    ul.innerHTML = A.length ? A.map((a) => `<li><span><b>${esc(state.idx && state.idx.source !== "demo" ? WalkAreas.nameFor(a.lat, a.lon) : a.name)}</b><small>${t("walkSet.areaMeta", { n: a.radiusKm, mb: fmtMb(a.bytes), date: I18n.date(a.at) })}</small></span><button class="btn" type="button" data-del-area="${esc(a.id)}">${t("common.delete")}</button></li>`).join("")
+      : `<li class="empty">${t("walkSet.none", { k: I18n.num(Walk.DETOUR, 1) })}</li>`;
     const stored = new Set(A.flatMap((a) => a.tiles)), tot = A.length ? [...stored].reduce((s, k) => s + ((WalkAreas.index && WalkAreas.index.tiles[k]) || 0), 0) : 0;
-    st.textContent = !base ? "Sorgente non disponibile: apri l'app dal sito pubblicato oppure indica l'indirizzo qui sotto."
-      : WalkAreas.graph ? `Rete pronta: ${WalkAreas.graph.n.toLocaleString("it-IT")} incroci e punti${tot ? " · " + mb(tot) + " in memoria" : ""}` : "Rete pedonale non ancora scaricata.";
+    st.textContent = !base ? t("walkSet.noSource")
+      : WalkAreas.graph ? t("walkSet.ready", { n: I18n.num(WalkAreas.graph.n) }) + (tot ? t("walkSet.inMemory", { mb: fmtMb(tot) }) : "") : t("walkSet.notYet");
     const idx = await WalkAreas.fetchIndex().catch(() => null);
     $("#btn-walk-refresh").hidden = !(idx && A.some((a) => a.built !== idx.built));
   },
   renderProxy() {
     const el = $("#proxy-info"), own = (state.prefs.proxy || "").trim();
-    $("#in-proxy").placeholder = Site.proxy ? "Vuoto = proxy del sito" : "https://hopon-proxy.tuonome.workers.dev/?url=";
+    $("#in-proxy").placeholder = Site.proxy ? t("settings.proxySitePlaceholder") : t("settings.proxyPlaceholder");
     el.hidden = !Site.proxy;
-    el.textContent = !Site.proxy ? "" : own ? "Stai usando il tuo proxy. Svuota il campo per tornare a quello del sito." : "In uso il proxy del sito: non devi configurare nulla.";
+    el.textContent = !Site.proxy ? "" : own ? t("settings.proxyOwn") : t("settings.proxySite");
   },
   async test() {
     state.prefs.proxy = $("#in-proxy").value.trim(); Prefs.save(state.prefs); Settings.renderProxy();
-    if (!proxyUrl()) { $("#test-result").textContent = "Inserisci l'indirizzo del tuo proxy (vedi sotto come crearlo)."; return; }
-    const out = $("#test-result"); out.textContent = "Provo a leggere le posizioni dei mezzi…";
+    if (!proxyUrl()) { $("#test-result").textContent = t("settings.proxyMissing"); return; }
+    const out = $("#test-result"); out.textContent = t("settings.testing");
     try {
       const b = await Net.bytes(Config.urls.vehicles, { timeoutMs: 12000 });
       const f = GtfsRt.decode(b);
-      out.textContent = `OK · ${f.entities.length} mezzi nel feed · aggiornato ${f.timestamp ? new Date(f.timestamp * 1000).toLocaleTimeString("it-IT") : "n.d."}`;
+      out.textContent = t("settings.testOk", { n: f.entities.length, time: f.timestamp ? I18n.time(f.timestamp * 1000) : t("common.na") });
       if (state.prefs.demo || !state.idx || state.idx.source !== "gtt") { state.prefs.demo = false; Prefs.save(state.prefs); Settings.close(); await Boot.start(); }
     } catch (e) {
-      out.textContent = `Non riesco a leggere il feed (${e.message || e.name}). Controlla l'indirizzo del proxy: deve terminare con ?url=`;
+      out.textContent = t("settings.testFail", { err: e.message || e.name });
     }
   },
 };
@@ -2883,8 +3761,8 @@ const Data = {
     if (!forceDownload && meta && Date.now() - meta.at < Config.staticMaxAgeMs) zip = await Cache.get("zip");
     if (!zip) {
       try {
-        loader("Scarico gli orari GTT", 0);
-        zip = await Net.bytes(Config.urls.gtfsZip, { timeoutMs: 120000, onProgress: (g, t) => loader(`Scarico gli orari GTT · ${(g / 1e6).toFixed(1)} MB`, t ? g / t : 0.3) });
+        loader(t("load.download"), 0);
+        zip = await Net.bytes(Config.urls.gtfsZip, { timeoutMs: 120000, onProgress: (g, tot) => loader(t("load.downloadMb", { mb: fmtMb(g) }), tot ? g / tot : 0.3) });
         await Cache.set("zip", zip); await Cache.set("zipMeta", { at: Date.now(), size: zip.length });
       } catch (e) {
         zip = meta ? await Cache.get("zip") : null;   // offline: uso lo zip vecchio se c'è
@@ -2892,11 +3770,11 @@ const Data = {
       }
     }
     try {
-      const idx = await GtfsStatic.build(zip, new Date(), { fflate }, (msg, f) => loader(msg, f));
+      const idx = await GtfsStatic.build(zip, new Date(), { fflate }, (key, f) => loader(t(key), f));
       state.idx = idx; await Cache.set("idx", idx);
       return true;
     } catch (e) {
-      console.error(e); toast("Errore nel leggere gli orari GTT: " + e.message); return false;
+      console.error(e); toast(t("load.error", { err: e.message })); return false;
     } finally { loader(null); }
   },
   async pollRealtime() {
@@ -2912,7 +3790,7 @@ const Data = {
         const af = ab.status === "fulfilled" ? GtfsRt.decode(ab.value) : null;
         state.rt.vehicles = Realtime.vehicles(state.idx, vf, now);
         state.rt.delays = Realtime.delays(state.idx, tf, now);
-        if (af) state.rt.alerts = Realtime.alerts(state.idx, af);
+        if (af) state.rt.alerts = Realtime.alerts(state.idx, af, [I18n.lang, "it"]);
         state.rt.fetchedAt = now; state.rt.error = null;
         state.mode = "live";
       } catch (e) {
@@ -2950,14 +3828,10 @@ const Boot = {
   async start() {
     state.rt = { delays: null, vehicles: [], alerts: [], fetchedAt: 0, error: null };
     state.selected = -1; UI.select(-1);
-    if (state.prefs.demo) return Boot.demo("Stai usando la <strong>demo</strong>: linee e mezzi sono inventati.");
+    if (state.prefs.demo) return Boot.demo(["boot.demoOn"]);
     const ok = await Data.loadStatic(false);
-    if (!ok) {
-      return Boot.demo(proxyUrl()
-        ? `Il proxy non risponde, quindi vedi la <strong>demo</strong> con linee inventate. <button class="linkish" type="button" data-open-settings>Controlla il proxy</button>`
-        : `Per i dati reali serve un proxy: per ora vedi la <strong>demo</strong> con linee inventate. <button class="linkish" type="button" data-open-settings>Collega i dati reali</button>`);
-    }
-    banner("");
+    if (!ok) return Boot.demo(proxyUrl() ? ["boot.proxyDown", "boot.checkProxy"] : ["boot.noProxy", "boot.connect"]);
+    Boot.setBanner(null);
     await Boot.walk();
     state.mode = "static"; UI.status(); UI.recompute(true);
     Data.pollRealtime();
@@ -2966,9 +3840,16 @@ const Boot = {
     setInterval(async () => { if (state.idx && state.idx.source === "gtt" && state.idx.dateKey !== Time.dateKey(new Date())) { await Data.loadStatic(false); WalkAreas.attach(); UI.recompute(true); } }, 60000);
   },
   async walk() { if (!WalkAreas.loaded) await WalkAreas.init(); else WalkAreas.attach(); },
-  async demo(msg) {
+  /** Avviso in alto: [chiave del testo, chiave del link alle impostazioni?], ridisegnato al cambio di lingua. */
+  _banner: null,
+  setBanner(spec) { Boot._banner = spec; Boot.renderBanner(); },
+  renderBanner() {
+    const b = Boot._banner;
+    banner(b ? t(b[0]) + (b[1] ? ` <button class="linkish" type="button" data-open-settings>${t(b[1])}</button>` : "") : "");
+  },
+  async demo(spec) {
     state.idx = Demo.build(new Date(), state.prefs.origin);       // linee inventate attorno alla partenza
-    state.mode = "demo"; UI.status(); banner(msg);
+    state.mode = "demo"; UI.status(); Boot.setBanner(spec);
     await Boot.walk();
     Data.startDemoTicker();
     WalkAreas.ensure(state.prefs.origin.lat, state.prefs.origin.lon);
