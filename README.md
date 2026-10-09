@@ -12,9 +12,15 @@ L'app è un solo file, [hop-on.html](hop-on.html). I percorsi a piedi lungo le s
    - scarica l'estratto OSM del Nord-Ovest (Geofabrik),
    - genera le tessere dei percorsi a piedi attorno alle fermate GTT,
    - pubblica `index.html` e la cartella `walk/`.
-4. L'app sarà su `https://<utente>.github.io/<repository>/`. Al primo avvio apri le impostazioni e inserisci l'indirizzo del proxy (vedi sotto).
+4. L'app sarà su `https://<utente>.github.io/<repository>/`.
 
-Facoltativo: in **Settings → Secrets and variables → Actions → Variables** puoi creare `HOPON_PROXY` con l'indirizzo del tuo proxy; il workflow lo usa solo se GitHub non riesce a scaricare il GTFS GTT direttamente.
+### Proxy predefinito (consigliato)
+
+In **Settings → Secrets and variables → Actions → New repository secret** crea il secret `HOPON_PROXY` con l'indirizzo del tuo proxy (es. `https://<nome>.<utente>.workers.dev/?url=`), poi rilancia il workflow. Alla pubblicazione [tools/make-config.mjs](tools/make-config.mjs) scrive `config.js` accanto all'app e chi apre il sito usa quel proxy senza configurare nulla.
+
+- Senza secret, o con un valore non valido, il sito funziona lo stesso: ogni utente inserisce il suo proxy dalle impostazioni.
+- Un proxy scritto dall'utente nelle impostazioni ha sempre la precedenza; svuotando il campo si torna a quello del sito.
+- Il secret tiene l'indirizzo fuori dal repository, ma `config.js` è pubblico sul sito: chi apre la pagina può leggerlo e usare il proxy (il worker accetta solo i domini GTT).
 
 ## Proxy per i dati GTT
 
@@ -27,6 +33,8 @@ curl -L -o Turin.osm.pbf https://download.bbbike.org/osm/bbbike/Turin/Turin.osm.
 node tools/build-walk-tiles.mjs --pbf Turin.osm.pbf --out walk
 python -m http.server 8080
 ```
+
+Per il proxy predefinito in locale copia `.env.example` in `.env`, inserisci l'indirizzo ed esegui `node tools/make-config.mjs` (scrive `config.js`, escluso da git).
 
 Poi apri `http://localhost:8080/hop-on.html`. Aprendo il file direttamente (`file://`) l'app funziona, ma senza GPS e con i tratti a piedi stimati, a meno di indicare in **Impostazioni → Percorsi a piedi → avanzato** l'indirizzo `walk/` del sito pubblicato.
 

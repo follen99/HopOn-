@@ -203,6 +203,7 @@ button { cursor: pointer; }
 .controls { display: grid; gap: 14px; padding: 4px 0 14px; border-bottom: 1px solid var(--hairline); }
 .ctl label, .ctl .lbl { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 .ctl output { font: 500 14px/1 var(--f-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.ctl-help { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
 input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; margin: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
@@ -379,6 +380,11 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
           <input type="range" id="in-walk" min="100" max="1000" step="50" value="400">
         </div>
         <div class="ctl">
+          <label for="in-prefer"><span>Preferisco camminare sotto</span><output id="out-prefer">200 m</output></label>
+          <input type="range" id="in-prefer" min="0" max="1000" step="50" value="200" aria-describedby="prefer-help">
+          <p class="ctl-help" id="prefer-help">Sotto questa distanza cammini invece di prendere un mezzo. Sopra, un mezzo o un cambio in più si propone solo se ti fa arrivare almeno 2 minuti prima.</p>
+        </div>
+        <div class="ctl">
           <span class="lbl"><span>Mezzi utilizzabili</span></span>
           <div class="chips" id="mode-chips"></div>
         </div>
@@ -409,6 +415,7 @@ details summary { cursor: pointer; font-weight: 700; font-size: 14px; margin-top
     <label class="field"><span>Indirizzo del proxy</span>
       <input type="url" id="in-proxy" placeholder="https://hopon-proxy.tuonome.workers.dev/?url=" inputmode="url" autocomplete="off">
     </label>
+    <p id="proxy-info" class="mono" hidden></p>
     <div class="row">
       <button class="btn primary" id="btn-test" type="button">Salva e prova</button>
       <button class="btn" id="btn-refresh-static" type="button">Riscarica orari GTT</button>
@@ -499,6 +506,8 @@ function cors() {
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+<!-- configurazione del sito (proxy predefinito), generata da tools/make-config.mjs; se manca l'app funziona lo stesso -->
+<script src="config.js"></script>
 <!-- Mappa di sfondo vettoriale (OpenFreeMap): MapLibre GL + ponte per Leaflet -->
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
@@ -523,6 +532,7 @@ const Config = {
   vehicleMaxAgeSec: 300,                           // posizioni più vecchie di 5 min scartate
   staticMaxAgeMs: 3 * 24 * 3600 * 1000,            // riscarica lo zip GTFS ogni 3 giorni
   transferBufferSec: 60,                           // margine minimo per un cambio
+  rideGainSec: 120,                                // un mezzo/cambio in più si propone solo se fa arrivare almeno 2 min prima
   indexVersion: 3,
 };
 
@@ -778,7 +788,7 @@ function finalizeIndex(base) {
     routeShapes[r] = { shapes: best.filter((s, d) => bestTrip[d] >= 0), trips: bestTrip.filter((t) => t >= 0) };
   }
   return {
-    v: Config.indexVersion, source: base.source, dateKey: base.dateKey, dayStart: base.dayStart, builtAt: Date.now(),
+    v: Config.indexVersion, source: base.source, center: base.center, dateKey: base.dateKey, dayStart: base.dayStart, builtAt: Date.now(),
     stops: base.stops, routes: base.routes, trips, tstops: { start, stop: tstop, time: ttime }, conn,
     shapes: base.shapes, routeShapes,
   };
@@ -929,9 +939,9 @@ const GtfsStatic = {
 /* ---------------- Demo: rete inventata intorno al centro ----------------
    Serve solo a provare l'interfaccia senza proxy. Linee, fermate e mezzi NON sono reali. */
 const Demo = {
-  build(now) {
+  build(now, center = Config.defaultOrigin) {
     let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const c = Config.defaultOrigin;
+    const c = { lat: center.lat, lon: center.lon };
     const defs = [
       { short: "M", mode: 0, ang: 20, len: 9000, spacing: 850, kmh: 32, head: 4, curve: 0.08 },
       { short: "D4", mode: 1, ang: 160, len: 9000, spacing: 380, kmh: 15, head: 8, curve: 0.25 },
@@ -981,7 +991,7 @@ const Demo = {
       }
     });
     return finalizeIndex({
-      source: "demo", dateKey: Time.dateKey(now), dayStart: Time.dayStart(now),
+      source: "demo", center: c, dateKey: Time.dateKey(now), dayStart: Time.dayStart(now),
       stops: { id: sid, name: sname, lat: Float64Array.from(slat), lon: Float64Array.from(slon) },
       routes: { ...routes, mode: Int8Array.from(routes.mode) },
       tripsRaw, shapes: { start: Int32Array.from(shapesStart), coords: Float32Array.from(shapeCoords) },
@@ -1278,10 +1288,11 @@ const Walk = {
     };
     const src = (node, t0, w0) => { if (w0 > cap || t0 > end) return; if (stamp[node] !== cur || t0 < T[node]) { stamp[node] = cur; T[node] = t0; walked[node] = w0; push(t0, node); } };
     for (const [n, d] of O.c) src(n, res.nowSec + d / mps, d);
+    // sorgenti: fermate dove si scende da un mezzo (quelle raggiunte a piedi le coprono l'origine e le fermate di discesa)
     for (let s = 0; s < res.best.length; s++) {
-      if (res.best[s] > end) continue;
-      if (W.stopNode[s] >= 0) src(W.stopNode[s], res.best[s] + W.stopSnap[s] / mps, W.stopSnap[s]);
-      else off.push({ lat: idx.stops.lat[s], lon: idx.stops.lon[s], elapsed: res.best[s] - res.nowSec });
+      const a = Engine.rideArrival(res, s); if (a > end) continue;
+      if (W.stopNode[s] >= 0) src(W.stopNode[s], a + W.stopSnap[s] / mps, W.stopSnap[s]);
+      else off.push({ lat: idx.stops.lat[s], lon: idx.stops.lon[s], elapsed: a - res.nowSec });
     }
     while (hn > 0) {
       const k = ws.hk[0], u = pop();
@@ -1303,7 +1314,12 @@ const Engine = {
     return idx._grid;
   },
   /**
-   * @param o { lat, lon, nowSec, budgetSec, maxWalk (m), walkMps, modes:[bool x4], maxRides (1..3), rt?: {delay, cancelled} }
+   * @param o { lat, lon, nowSec, budgetSec, maxWalk (m), walkMps, modes:[bool x4], maxRides (1..3), rt?: {delay, cancelled},
+   *            walk?: rete pedonale, preferWalk?: metri sotto cui si preferisce camminare invece di prendere un mezzo }
+   *
+   * Preferenza per camminare: un arrivo a una fermata con più corse (round più alto) vale solo se batte
+   * l'arrivo con meno corse di almeno Engine.margin(): rideGainSec, oppure l'intero tempo del tratto a piedi
+   * se quel tratto è sotto preferWalk (un mezzo non sostituisce mai un tratto breve a piedi).
    */
   isochrone(idx, o) {
     const nS = idx.stops.id.length, nT = idx.trips.id.length, K = o.maxRides;
@@ -1314,6 +1330,12 @@ const Engine = {
     // genitori per ricostruire l'itinerario: per round e fermata, la corsa presa (e dove si è saliti) oppure la fermata da cui si è arrivati a piedi
     const parTrip = [], parBoard = [], parWalk = [];
     for (let k = 0; k <= K; k++) { parTrip.push(new Int32Array(nS).fill(-1)); parBoard.push(new Int32Array(nS).fill(-1)); parWalk.push(new Int32Array(nS).fill(-1)); }
+    const lastWalk = []; for (let k = 0; k <= K; k++) lastWalk.push(new Float32Array(nS));   // metri dell'ultimo tratto a piedi (0 = arrivo col mezzo)
+    const accept = (r, s, t) => {
+      if (!(t < arr[r][s])) return false;
+      for (let j = 0; j < r; j++) if (arr[j][s] < INF && t > arr[j][s] - Engine.margin(lastWalk[j][s], o)) return false;
+      return true;
+    };
     const viaTrip = new Int32Array(nS).fill(-1);
     const tripRound = new Int8Array(nT), boardStop = new Int32Array(nT).fill(-1), boardTime = new Float64Array(nT);
     const tripMode = idx.routes.mode, troute = idx.trips.route;
@@ -1325,7 +1347,7 @@ const Engine = {
     for (let i = 0; i < access.length; i += 2) {
       const s = access[i], t = o.nowSec + access[i + 1] / o.walkMps;
       accessDist.set(s, access[i + 1]);
-      if (t < arr[0][s]) { arr[0][s] = t; if (t < best[s]) best[s] = t; }
+      if (t < arr[0][s]) { arr[0][s] = t; lastWalk[0][s] = access[i + 1]; if (t < best[s]) best[s] = t; }
     }
     // cambi a piedi tra fermate vicine (calcolati al bisogno, tenuti in cache con la rete pedonale)
     const neighbours = (s) => Walk.stopsFromStop(o.walk, idx, s, o.maxWalk);
@@ -1351,14 +1373,14 @@ const Engine = {
         }
       }
       if (r === 0) continue;
-      if (arv < arr[r][to]) {
-        arr[r][to] = arv; parTrip[r][to] = t; parBoard[r][to] = boardStop[t]; parWalk[r][to] = -1;
+      if (accept(r, to, arv)) {
+        arr[r][to] = arv; lastWalk[r][to] = 0; parTrip[r][to] = t; parBoard[r][to] = boardStop[t]; parWalk[r][to] = -1;
         if (arv < best[to]) { best[to] = arv; viaTrip[to] = t; }
         if (r < K) {
           const nb = neighbours(to);
           for (let j = 0; j < nb.length; j += 2) {
             const n = nb[j], tw = arv + nb[j + 1] / o.walkMps;
-            if (tw <= end && tw < arr[r][n]) { arr[r][n] = tw; parTrip[r][n] = -1; parWalk[r][n] = to; if (tw < best[n]) best[n] = tw; }
+            if (tw <= end && accept(r, n, tw)) { arr[r][n] = tw; lastWalk[r][n] = nb[j + 1]; parTrip[r][n] = -1; parWalk[r][n] = to; if (tw < best[n]) best[n] = tw; }
           }
         }
       }
@@ -1384,6 +1406,11 @@ const Engine = {
     let reachedStops = 0; for (let s = 0; s < nS; s++) if (best[s] <= end) reachedStops++;
     return { best, viaTrip, routes, reachedStops, nowSec: o.nowSec, end, opts: o, arr, par: { trip: parTrip, board: parBoard, walk: parWalk }, accessDist };
   },
+  /** Vantaggio minimo (s) che un mezzo in più deve dare rispetto a un'alternativa che finisce con `walkM` metri a piedi. */
+  margin(walkM, o) {
+    const g = Config.rideGainSec;
+    return walkM > 0 && walkM <= (o.preferWalk || 0) ? Math.max(g, walkM / o.walkMps) : g;
+  },
   /**
    * Itinerario migliore dall'origine a un punto qualsiasi, usando i risultati di isochrone().
    * Restituisce null se il punto non è raggiungibile entro il tempo, altrimenti
@@ -1392,19 +1419,27 @@ const Engine = {
    */
   journey(idx, res, lat, lon) {
     const o = res.opts, W = o.walk, mps = o.walkMps, K = res.arr.length - 1;
-    let bestT = Infinity, bestS = -1, bestK = -1, bestD = 0;
     const P = { lat, lon }, O = { lat: o.lat, lon: o.lon };
     const direct = Walk.path(W, idx, O, P, o.maxWalk), d0 = direct ? direct.dist : Infinity;
-    if (d0 <= o.maxWalk && res.nowSec + d0 / mps <= res.end) bestT = res.nowSec + d0 / mps;
+    // per numero di corse: l'arrivo migliore (solo a piedi = 0 corse)
+    const byRides = new Array(K + 1).fill(null);
+    if (d0 <= o.maxWalk && res.nowSec + d0 / mps <= res.end) byRides[0] = { t: res.nowSec + d0 / mps, s: -1, k: -1, d: d0 };
     const near = Walk.stopsFrom(W, idx, lat, lon, o.maxWalk);
     for (let i = 0; i < near.length; i += 2) {
       const s = near[i], d = near[i + 1];
-      for (let k = 0; k <= K; k++) {
-        const t = res.arr[k][s] + d / mps;
-        if (t <= res.end && (t < bestT - 0.5 || (Math.abs(t - bestT) <= 0.5 && bestS >= 0 && k < bestK))) { bestT = t; bestS = s; bestK = k; bestD = d; }
+      // solo fermate dove si scende da un mezzo: "a piedi fino a una fermata e poi alla meta" sommerebbe due tratti
+      // (lo coprono il tratto diretto o la fermata di discesa)
+      for (let k = 1; k <= K; k++) {
+        if (res.par.trip[k][s] < 0) continue;
+        const t = res.arr[k][s] + d / mps, c = byRides[k];
+        if (t <= res.end && (!c || t < c.t)) byRides[k] = { t, s, k, d };
       }
     }
-    if (bestT === Infinity) return null;
+    // meno corse a parità (quasi) di arrivo: più corse solo se fanno arrivare prima di Engine.margin()
+    let pick = null;
+    for (const c of byRides) if (c && (!pick || c.t < pick.t - (c.k <= 0 && pick.k <= 0 ? 0 : Engine.margin(pick.d, o)))) pick = c;
+    if (!pick) return null;
+    const bestT = pick.t, bestS = pick.s, bestK = pick.k, bestD = pick.d;
     if (bestS < 0) return Engine._summary(res, [{ type: "walk", from: O, to: P, dist: d0, dep: res.nowSec, arr: bestT, pts: direct.pts, estimated: direct.estimated }], bestT);
 
     // risalita dei genitori: tratto finale a piedi, poi corse e cambi a ritroso
@@ -1476,8 +1511,14 @@ const Engine = {
   /** Punti per il disegno senza rete pedonale: origine + ogni fermata raggiunta, con il tempo già trascorso. */
   isoPoints(idx, res) {
     const pts = [{ lat: res.opts.lat, lon: res.opts.lon, elapsed: 0 }];
-    for (let s = 0; s < res.best.length; s++) if (res.best[s] <= res.end) pts.push({ lat: idx.stops.lat[s], lon: idx.stops.lon[s], elapsed: res.best[s] - res.nowSec });
+    for (let s = 0; s < res.best.length; s++) { const a = Engine.rideArrival(res, s); if (a <= res.end) pts.push({ lat: idx.stops.lat[s], lon: idx.stops.lon[s], elapsed: a - res.nowSec }); }
     return pts;
+  },
+  /** Primo arrivo a una fermata scendendo da un mezzo (Infinity se ci si arriva solo a piedi o mai). */
+  rideArrival(res, s) {
+    let a = Infinity;
+    for (let k = 1; k < res.arr.length; k++) if (res.par.trip[k][s] >= 0 && res.arr[k][s] < a) a = res.arr[k][s];
+    return a;
   },
 };
 
@@ -1499,7 +1540,7 @@ const $ = (s) => document.querySelector(s);
 const Prefs = {
   key: "hopon.prefs.v1",
   load() {
-    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null, walkRadiusKm: 6, walkBase: "" };
+    const d = { budgetMin: 20, maxWalk: 400, modes: [true, true, true, true], maxRides: 2, proxy: "", cartoKey: "", demo: false, walkKmh: 4.5, origin: null, walkRadiusKm: 6, walkBase: "", preferWalk: 200 };
     try { return Object.assign(d, JSON.parse(localStorage.getItem(this.key) || "{}")); } catch { return d; }
   },
   save(p) { try { localStorage.setItem(this.key, JSON.stringify(p)); } catch {} },
@@ -1511,11 +1552,13 @@ const Cache = {
   open() {
     if (this._db) return this._db;
     this._db = new Promise((res, rej) => {
+      // se IndexedDB non risponde (es. bloccato da un'altra scheda) si prosegue senza cache invece di restare fermi
+      const to = setTimeout(() => rej(new Error("IndexedDB non risponde")), 4000);
       try {
         const r = indexedDB.open("hopon", 1);
         r.onupgradeneeded = () => r.result.createObjectStore("kv");
-        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
-      } catch (e) { rej(e); }
+        r.onsuccess = () => { clearTimeout(to); res(r.result); }; r.onerror = () => { clearTimeout(to); rej(r.error); };
+      } catch (e) { clearTimeout(to); rej(e); }
     });
     return this._db;
   },
@@ -1533,10 +1576,24 @@ const Cache = {
   },
 };
 
+/* ---------------- Configurazione del sito ----------------
+   config.js accanto alla pagina (window.HOPON_CONFIG), generato da tools/make-config.mjs alla pubblicazione (secret HOPON_PROXY)
+   o in locale (file .env). È uno script e non un JSON perché così si legge anche aprendo la pagina da disco (file://).
+   Se manca o il proxy non è valido, l'utente inserisce il suo dalle impostazioni.
+   Il proxy scritto dall'utente ha sempre la precedenza su quello del sito. */
+const Site = {
+  proxy: "",
+  async load() {
+    const c = window.HOPON_CONFIG, px = c && typeof c.proxy === "string" ? c.proxy.trim() : "";
+    if (/^https:\/\/[^\s]+$/.test(px)) Site.proxy = px;
+  },
+};
+const proxyUrl = () => (state.prefs.proxy || "").trim() || Site.proxy;
+
 /* ---------------- Rete: fetch diretto o tramite proxy CORS ---------------- */
 const Net = {
   url(target) {
-    const p = state.prefs.proxy.trim();
+    const p = proxyUrl();
     if (!p) return target;
     return p.includes("{url}") ? p.replace("{url}", encodeURIComponent(target)) : p + encodeURIComponent(target);
   },
@@ -1869,12 +1926,13 @@ const UI = {
   init() {
     const p = state.prefs;
     // controlli
-    const inT = $("#in-time"), inW = $("#in-walk");
-    inT.value = p.budgetMin; inW.value = p.maxWalk;
-    const syncOut = () => { $("#out-time").textContent = inT.value + " min"; $("#out-walk").textContent = inW.value + " m"; };
+    const inT = $("#in-time"), inW = $("#in-walk"), inP = $("#in-prefer");
+    inT.value = p.budgetMin; inW.value = p.maxWalk; inP.value = p.preferWalk;
+    const syncOut = () => { $("#out-time").textContent = inT.value + " min"; $("#out-walk").textContent = inW.value + " m"; $("#out-prefer").textContent = inP.value + " m"; };
     syncOut();
     inT.addEventListener("input", () => { p.budgetMin = +inT.value; syncOut(); UI.recompute(); });
     inW.addEventListener("input", () => { p.maxWalk = +inW.value; syncOut(); UI.recompute(); });
+    inP.addEventListener("input", () => { p.preferWalk = +inP.value; syncOut(); UI.recompute(); });
     const chips = $("#mode-chips");
     MODES.forEach((m, i) => {
       const b = document.createElement("button");
@@ -1902,6 +1960,9 @@ const UI = {
   },
   setOrigin(lat, lon, pan) {
     state.prefs.origin = { lat, lon };
+    // demo: le linee inventate seguono la partenza se ci si sposta lontano
+    const c = state.idx && state.idx.source === "demo" && state.idx.center;
+    if (c && Geo.dist(c.lat, c.lon, lat, lon) > 2500) { state.idx = Demo.build(new Date(), { lat, lon }); WalkAreas.attach(); }
     MapView.pin.setLatLng([lat, lon]);
     if (pan) MapView.centerOn(lat, lon, Math.max(MapView.map.getZoom(), 14));
     UI.recompute(true);
@@ -1928,7 +1989,7 @@ const UI = {
     const t0 = performance.now();
     const res = Engine.isochrone(state.idx, {
       lat: p.origin.lat, lon: p.origin.lon, nowSec: nowSec(), budgetSec: p.budgetMin * 60, maxWalk: p.maxWalk, walkMps: walkMps(),
-      modes: p.modes, maxRides: p.maxRides, rt: state.rt.delays, walk: state.walk,
+      modes: p.modes, maxRides: p.maxRides, rt: state.rt.delays, walk: state.walk, preferWalk: p.preferWalk,
     });
     state.result = res;
     if (state.selected >= 0 && !res.routes.has(state.selected)) state.selected = -1;
@@ -2253,7 +2314,7 @@ const Settings = {
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#settings").hidden) Settings.close(); });
   },
   async open() {
-    $("#in-proxy").value = state.prefs.proxy; $("#in-carto").value = state.prefs.cartoKey || ""; $("#in-demo").checked = !!state.prefs.demo; $("#in-speed").value = String(state.prefs.walkKmh);
+    $("#in-proxy").value = state.prefs.proxy; Settings.renderProxy(); $("#in-carto").value = state.prefs.cartoKey || ""; $("#in-demo").checked = !!state.prefs.demo; $("#in-speed").value = String(state.prefs.walkKmh);
     $("#test-result").textContent = "";
     $("#in-walk-radius").value = String(state.prefs.walkRadiusKm || 6); $("#in-walk-base").value = state.prefs.walkBase || "";
     Settings.renderAreas();
@@ -2274,8 +2335,15 @@ const Settings = {
     const idx = await WalkAreas.fetchIndex().catch(() => null);
     $("#btn-walk-refresh").hidden = !(idx && A.some((a) => a.built !== idx.built));
   },
+  renderProxy() {
+    const el = $("#proxy-info"), own = (state.prefs.proxy || "").trim();
+    $("#in-proxy").placeholder = Site.proxy ? "Vuoto = proxy del sito" : "https://hopon-proxy.tuonome.workers.dev/?url=";
+    el.hidden = !Site.proxy;
+    el.textContent = !Site.proxy ? "" : own ? "Stai usando il tuo proxy. Svuota il campo per tornare a quello del sito." : "In uso il proxy del sito: non devi configurare nulla.";
+  },
   async test() {
-    state.prefs.proxy = $("#in-proxy").value.trim(); Prefs.save(state.prefs);
+    state.prefs.proxy = $("#in-proxy").value.trim(); Prefs.save(state.prefs); Settings.renderProxy();
+    if (!proxyUrl()) { $("#test-result").textContent = "Inserisci l'indirizzo del tuo proxy (vedi sotto come crearlo)."; return; }
     const out = $("#test-result"); out.textContent = "Provo a leggere le posizioni dei mezzi…";
     try {
       const b = await Net.bytes(Config.urls.vehicles, { timeoutMs: 12000 });
@@ -2373,7 +2441,9 @@ const Boot = {
     if (state.prefs.demo) return Boot.demo("Stai usando la <strong>demo</strong>: linee e mezzi sono inventati.");
     const ok = await Data.loadStatic(false);
     if (!ok) {
-      return Boot.demo(`Orari GTT non raggiungibili da questo browser, quindi vedi la <strong>demo</strong> con linee inventate. <button class="linkish" type="button" data-open-settings>Collega i dati reali</button>`);
+      return Boot.demo(proxyUrl()
+        ? `Il proxy non risponde, quindi vedi la <strong>demo</strong> con linee inventate. <button class="linkish" type="button" data-open-settings>Controlla il proxy</button>`
+        : `Per i dati reali serve un proxy: per ora vedi la <strong>demo</strong> con linee inventate. <button class="linkish" type="button" data-open-settings>Collega i dati reali</button>`);
     }
     banner("");
     await Boot.walk();
@@ -2385,7 +2455,7 @@ const Boot = {
   },
   async walk() { if (!WalkAreas.loaded) await WalkAreas.init(); else WalkAreas.attach(); },
   async demo(msg) {
-    state.idx = Demo.build(new Date());
+    state.idx = Demo.build(new Date(), state.prefs.origin);       // linee inventate attorno alla partenza
     state.mode = "demo"; UI.status(); banner(msg);
     await Boot.walk();
     Data.startDemoTicker();
@@ -2394,7 +2464,7 @@ const Boot = {
 };
 
 UI.init();
-Boot.start();
+Site.load().then(Boot.start);
 })();
 </script>
 </body>

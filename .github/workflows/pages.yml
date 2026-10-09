@@ -22,12 +22,15 @@ concurrency:
 env:
   # Estratto OSM ordinato che copre Torino e la provincia (Piemonte, Liguria, Lombardia, VdA)
   OSM_URL: https://download.geofabrik.de/europe/italy/nord-ovest-latest.osm.pbf
-  # Proxy usato solo se il runner non riesce a scaricare il GTFS GTT direttamente
-  GTFS_PROXY: ${{ vars.HOPON_PROXY || 'https://hopon-proxy.giulianoranauroiphone1.workers.dev/?url=' }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Proxy predefinito dell'app (secret HOPON_PROXY, o variabile con lo stesso nome). Se manca,
+      # il sito funziona lo stesso: ogni utente inserisce il suo proxy dalle impostazioni.
+      # Serve anche come ripiego se il runner non riesce a scaricare il GTFS GTT direttamente.
+      HOPON_PROXY: ${{ secrets.HOPON_PROXY || vars.HOPON_PROXY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,12 +52,13 @@ jobs:
         run: test -s osm.pbf || curl -fsSL --retry 3 -o osm.pbf "$OSM_URL"
 
       - name: Costruisci le tessere dei percorsi a piedi
-        run: node --max-old-space-size=6144 tools/build-walk-tiles.mjs --pbf osm.pbf --out _site/walk --proxy "$GTFS_PROXY"
+        run: node --max-old-space-size=6144 tools/build-walk-tiles.mjs --pbf osm.pbf --out _site/walk --proxy "$HOPON_PROXY"
 
       - name: Prepara il sito
         run: |
           cp hop-on.html _site/index.html
           cp hop-on.html _site/hop-on.html
+          node tools/make-config.mjs --out _site
 
       - uses: actions/upload-pages-artifact@v3
         with:

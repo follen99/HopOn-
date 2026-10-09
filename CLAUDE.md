@@ -13,7 +13,8 @@ Storia, requisiti completi, domande aperte e idee di feature: **[HANDOFF.md](HAN
 
 L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto:
 - [tools/build-walk-tiles.mjs](tools/build-walk-tiles.mjs): Node senza dipendenze, legge un `.osm.pbf` (decoder PBF interno, due passaggi: relazioni poi nodi/vie) e il GTFS GTT, scrive le tessere della rete pedonale in `walk/` (gitignored).
-- [.github/workflows/pages.yml](.github/workflows/pages.yml): pubblica su GitHub Pages (`hop-on.html` → `index.html` + `walk/` generata da Geofabrik nord-ovest); istruzioni per l'utente in [README.md](README.md).
+- [.github/workflows/pages.yml](.github/workflows/pages.yml): pubblica su GitHub Pages (`hop-on.html` → `index.html` + `walk/` generata da Geofabrik nord-ovest + `config.js`); istruzioni per l'utente in [README.md](README.md). Pages deve avere Source = GitHub Actions.
+- [tools/make-config.mjs](tools/make-config.mjs): scrive `config.js` (`window.HOPON_CONFIG = {proxy}`) dal secret/variabile `HOPON_PROXY` o dal file `.env` (entrambi `config.js` e `.env` sono gitignored). Senza proxy valido non scrive nulla.
 - `.claude/launch.json`: server locale `python -m http.server 8080` (nome `hopon`).
 
 `hop-on.html` è diviso in blocchi che diventeranno moduli:
@@ -30,6 +31,8 @@ L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto
 `Core` contiene: `Config`, `MODES`/`modeFromRouteType`, `Geo`, `Time`, `Csv`, `GtfsRt` (decoder protobuf scritto a mano), `GtfsStatic` + `finalizeIndex` (zip GTFS → indice a array tipizzati), `Demo`, `Realtime`, `Walk` (rete pedonale), `Engine` (isocrona con Connection Scan Algorithm a round).
 
 **Percorsi a piedi (`Walk`):** tessere ~2,8 × 2,8 km (`tileLat` 0,025°, `tileLon` 0,035°, letti da `walk/index.json`), formato `HOW1` gzip descritto in testa a `Walk` e in `writeTile`. `Walk.build` unisce le tessere (nodi di confine per coordinate) in un grafo CSR; i pezzi di rete con meno di 200 nodi sono "non principali" e l'aggancio li evita. `Walk.attach` aggancia le fermate. Un punto parte da tutti i nodi entro (distanza dal più vicino + 40 m) (`Walk.cands`), così piazze e cortili non allungano i percorsi. Dove la rete manca la distanza è stimata: linea d'aria × `Walk.DETOUR` (1,3), e il tratto è marcato `estimated`. `Walk.field` (Dijkstra multi-sorgente in tempo, max `maxWalk` per tratto) dà il tempo di arrivo per nodo: il layer isocrona disegna le strade colorate; i punti fuori rete restano cerchi.
+
+**Preferenza per camminare:** `Config.rideGainSec` (120 s) e `opts.preferWalk` (slider "Preferisco camminare sotto", default 200 m). Nel CSA un arrivo a una fermata con più corse vale solo se batte gli arrivi con meno corse di `Engine.margin(lastWalk)`: 120 s, oppure l'intero tempo dell'ultimo tratto a piedi se è ≤ `preferWalk`. Stessa regola in `Engine.journey` tra le opzioni per numero di corse. Gli itinerari e l'area disegnata finiscono solo da fermate dove si scende da un mezzo (`Engine.rideArrival`), così nessun tratto a piedi supera `maxWalk`.
 
 `Engine.isochrone` salva per ogni round e fermata il "genitore" (corsa + fermata di salita, oppure fermata da cui si arriva a piedi); `Engine.journey` lo usa per ricostruire l'itinerario verso un punto qualsiasi, `Engine.nextDepartures` dà i passaggi successivi a una fermata.
 
@@ -51,6 +54,7 @@ L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto
 
 - Fonti GTT/aperTO, CC-BY 4.0, senza chiave (URL in `Config.urls`).
 - I server GTT **non inviano header CORS**: dal browser si passa sempre dal proxy (formato `https://…workers.dev/?url=` oppure con segnaposto `{url}`). Il worker accetta solo `percorsieorari.gtt.to.it` e `www.gtt.to.it`.
+- Proxy effettivo = `prefs.proxy` dell'utente, altrimenti `Site.proxy` letto da `config.js` (script `window.HOPON_CONFIG`, funziona anche da `file://`), altrimenti nessuno → demo con banner che chiede di collegarlo. **Non scrivere l'indirizzo del proxy nei file del repository** (è pubblico): sta nel secret `HOPON_PROXY` e in `.env` locale.
 - Mappa: OpenFreeMap vettoriale (default), CARTO raster con chiave facoltativa, tile OSM solo come ripiego (non funzionano da `file://`).
 - GPS e tile OSM richiedono https: per provare su telefono va pubblicato (es. GitHub Pages).
 - Senza orari reali raggiungibili l'app parte in **modalità demo**, con banner.
@@ -67,7 +71,7 @@ Per l'interfaccia con i percorsi a piedi serve http: generare `walk/` (es. da BB
 
 ## Stato
 
-- Proxy online: `https://hopon-proxy.giulianoranauroiphone1.workers.dev/?url=` (funzionante, rifiuta host non GTT).
+- Proxy dell'utente online (funzionante, rifiuta host non GTT); indirizzo nel secret `HOPON_PROXY` del repository GitHub `follen99/HopOn-` e in `.env` locale.
 - **Dati reali verificati in Node (7 ottobre 2026)** con `Core`:
   - Zip GTT ~15,8 MB (stop_times.txt ~84 MB decompresso). `GtfsStatic.build` ~3,8 s su PC (sul telefono sarà molto di più → Web Worker), indice ~16 MB. 7.054 fermate, 215 linee, ~15.000 corse/giorno, ~430.000 connessioni. Isocrona 10–15 ms.
   - `routes.txt`: metro `METROU` con route_type 1 (classificata correttamente), 10 tram, 204 bus, **nessun treno** → la casella "Treni" oggi non ha effetto. CSV con tutti i campi tra virgolette.
@@ -76,5 +80,7 @@ Per l'interfaccia con i percorsi a piedi serve http: generare `walk/` (es. da BB
   - trip_update: nessun `delay` a livello corsa; per fermata mix di `delay` e `time`, solo `stop_sequence` (mai `stop_id`). Tutti i `trip_id` presenti nello zip.
   - Avvisi: ~150, quasi tutti collegati a linee; quelli con solo `agency_id` (es. "Linee 13 e 15 deviate") non vengono associati alle linee.
 - Rete pedonale (7 ottobre 2026): estratto BBBike Torino → 175 tessere, 3,8 MB; area di 6 km attorno a piazza Castello ≈ 1,3 MB, ~160.000 nodi, costruzione grafo ~0,4 s + aggancio fermate ~0,5 s su PC; isocrona con strade ~10 ms, area colorata ~30 ms. Tratti a piedi tipicamente 1,2–1,4 × la linea d'aria.
-- Verificati nel browser (localhost) con dati reali: itinerari, cambi, pressione prolungata, aree a piedi (download, eliminazione, persistenza). Non verificati: prestazioni sul telefono, workflow GitHub Pages (il repository non ha ancora un remote).
+- Verificati nel browser (localhost) con dati reali: itinerari, cambi, pressione prolungata, aree a piedi (download, eliminazione, persistenza), proxy del sito (presente, assente, non raggiungibile). Estratto Geofabrik completo: 833 tessere, 14,7 MB, ~50 s.
+- Preferenza per camminare, su ~500 itinerari reali: corse medie 1,31 → 1,22, "navette" di 1–2 fermate prima di un altro mezzo 43 → 28, arrivo medio invariato (+6 s).
+- Non verificati: prestazioni sul telefono.
 - Prossimi passi (HANDOFF.md §8): GitHub Pages → prova dell'app sul telefono → `GtfsStatic.build` in un Web Worker → migrazione a progetto Vite (`src/core`, `src/app`, `worker/proxy.js`, `test/`) → domande aperte e modalità radar.

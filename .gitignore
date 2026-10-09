@@ -3,3 +3,6 @@ walk/
 _site/
 *.osm.pbf
 node_modules/
+# proxy predefinito: in locale da .env, sul sito dal secret HOPON_PROXY (tools/make-config.mjs)
+.env
+config.js
