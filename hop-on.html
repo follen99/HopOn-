@@ -1243,6 +1243,75 @@ const Realtime = {
   },
 };
 
+/* ---------------- Forme delle corse: fermate agganciate al percorso ----------------
+   Posizione lungo una polilinea ll = indice continuo pos = j + u (punto a frazione u del tratto j → j+1). */
+const Shape = {
+  /**
+   * Posizione di ogni fermata della corsa t lungo la sua forma ll ([[lat, lon]...]): proiezione sul punto più vicino
+   * del tratto giusto (non sul vertice più vicino). Per ogni fermata i candidati sono i minimi locali della distanza
+   * lungo la forma (più il minimo assoluto); si sceglie la sequenza che avanza sempre lungo la forma con la distanza
+   * totale minima, così una forma che passa due volte nella stessa via non aggancia la fermata al passaggio sbagliato.
+   * Restituisce { at: Float64Array posizioni, off: Float32Array distanze fermata–forma in metri }.
+   */
+  snapStops(idx, t, ll) {
+    const { start, stop } = idx.tstops, k0 = start[t], n = start[t + 1] - k0, m = ll.length;
+    const at = new Float64Array(n), off = new Float32Array(n);
+    if (m < 2) return { at, off };
+    const kx = 111320 * Math.cos(ll[0][0] * Math.PI / 180), ky = 110574;
+    const X = new Float64Array(m), Y = new Float64Array(m);
+    for (let j = 0; j < m; j++) { X[j] = ll[j][1] * kx; Y[j] = ll[j][0] * ky; }
+    const d = new Float64Array(m - 1), u = new Float64Array(m - 1), cands = [];
+    for (let i = 0; i < n; i++) {
+      const s = stop[k0 + i], px = idx.stops.lon[s] * kx, py = idx.stops.lat[s] * ky;
+      let best = 0;
+      for (let j = 0; j < m - 1; j++) {
+        const dx = X[j + 1] - X[j], dy = Y[j + 1] - Y[j], l2 = dx * dx + dy * dy;
+        let f = l2 > 0 ? ((px - X[j]) * dx + (py - Y[j]) * dy) / l2 : 0; f = f < 0 ? 0 : f > 1 ? 1 : f;
+        const ex = X[j] + f * dx - px, ey = Y[j] + f * dy - py;
+        d[j] = Math.sqrt(ex * ex + ey * ey); u[j] = f; if (d[j] < d[best]) best = j;
+      }
+      const c = [];
+      for (let j = 0; j < m - 1; j++) {
+        if (j !== best && (d[j] > d[best] + 150 || (j > 0 && d[j] >= d[j - 1]) || (j < m - 2 && d[j] > d[j + 1]))) continue;
+        c.push([j + u[j], d[j]]);
+      }
+      c.sort((a, b) => a[1] - b[1]); cands.push(c.slice(0, 8));
+    }
+    // programmazione dinamica: posizioni non decrescenti, somma delle distanze minima
+    const cost = [], from = [];
+    for (let i = 0; i < n; i++) {
+      const c = cands[i], C = new Float64Array(c.length), F = new Int32Array(c.length).fill(-1);
+      for (let a = 0; a < c.length; a++) {
+        let base = 0;
+        if (i > 0) {
+          base = Infinity;
+          const P = cands[i - 1], PC = cost[i - 1];
+          for (let b = 0; b < P.length; b++) if (P[b][0] <= c[a][0] && PC[b] < base) { base = PC[b]; F[a] = b; }
+          if (F[a] < 0) for (let b = 0; b < P.length; b++) if (PC[b] + 1e6 < base) { base = PC[b] + 1e6; F[a] = b; }   // nessuna sequenza in avanti: penalità
+        }
+        C[a] = base + c[a][1];
+      }
+      cost.push(C); from.push(F);
+    }
+    let a = 0; for (let b = 1; b < cost[n - 1].length; b++) if (cost[n - 1][b] < cost[n - 1][a]) a = b;
+    for (let i = n - 1; i >= 0; i--) { at[i] = cands[i][a][0]; off[i] = cands[i][a][1]; a = from[i][a]; }
+    return { at, off };
+  },
+  /** Punto [lat, lon] alla posizione continua pos. */
+  pointAt(ll, pos) {
+    const j = Math.min(Math.floor(pos), ll.length - 1), f = pos - j;
+    if (f <= 0 || j + 1 >= ll.length) return ll[j];
+    return [ll[j][0] + (ll[j + 1][0] - ll[j][0]) * f, ll[j][1] + (ll[j + 1][1] - ll[j][1]) * f];
+  },
+  /** Tratto della polilinea tra le posizioni a e b (a < b): inizia e finisce esattamente in quei punti. */
+  sub(ll, a, b) {
+    const out = [Shape.pointAt(ll, a)];
+    for (let j = Math.floor(a) + 1; j < b; j++) out.push(ll[j]);
+    out.push(Shape.pointAt(ll, b));
+    return out;
+  },
+};
+
 /* ---------------- Motore isocrona: Connection Scan Algorithm ----------------
    Scansiona le connessioni (tratta fermata→fermata di una corsa) in ordine di partenza.
    Etichette per "numero di corse prese" (round) per limitare i cambi. */
@@ -1674,7 +1743,7 @@ const Engine = {
   },
 };
 
-return { Config, MODES, modeFromRouteType, Geo, Time, Csv, GtfsRt, GtfsStatic, Demo, Realtime, Walk, Engine, finalizeIndex };
+return { Config, MODES, modeFromRouteType, Geo, Time, Csv, GtfsRt, GtfsStatic, Demo, Realtime, Walk, Shape, Engine, finalizeIndex };
 })();
 if (typeof module !== "undefined") module.exports = Core;
 </script>
@@ -1685,7 +1754,7 @@ if (typeof module !== "undefined") module.exports = Core;
 <script id="app">
 "use strict";
 (() => {
-const { Config, MODES, Geo, Time, GtfsRt, GtfsStatic, Demo, Realtime, Walk, Engine } = Core;
+const { Config, MODES, Geo, Time, GtfsRt, GtfsStatic, Demo, Realtime, Walk, Shape, Engine } = Core;
 const $ = (s) => document.querySelector(s);
 
 /* ---------------- Preferenze (localStorage, solo comodità) ---------------- */
@@ -1976,11 +2045,20 @@ const MapView = (() => {
       if (kFrom < 0) { if (stop[k] === c.boardStop) kFrom = k; continue; }
       if (time[k] + dl <= res.end) kLast = k; else break;
     }
-    if (kFrom < 0 || kLast < 0) return null;
-    const p = tripPath(idx, t), seg = p.ll.slice(p.at[kFrom - k0], p.at[kLast - k0] + 1);
-    if (seg.length >= 2) return seg;
-    const out = []; for (let k = kFrom; k <= kLast; k++) out.push([idx.stops.lat[stop[k]], idx.stops.lon[stop[k]]]);
-    return out;
+    return kFrom < 0 || kLast < 0 ? null : ridePath(idx, t, kFrom, kLast);
+  }
+
+  /**
+   * Tratto di una corsa da fermata a fermata (indici kA < kB in tstops): lungo la forma tra le proiezioni delle due
+   * fermate, più il raccordo fino al punto esatto di ciascuna fermata. Senza forma utilizzabile: le fermate in sequenza.
+   */
+  function ridePath(idx, t, kA, kB) {
+    const p = tripPath(idx, t), k0 = idx.tstops.start[t], a = p.at[kA - k0], b = p.at[kB - k0];
+    const S = (k) => [idx.stops.lat[idx.tstops.stop[k]], idx.stops.lon[idx.tstops.stop[k]]];
+    if (!(b > a)) { const out = []; for (let k = kA; k <= kB; k++) out.push(S(k)); return out; }
+    const seg = Shape.sub(p.ll, a, b);
+    seg.unshift(S(kA)); seg.push(S(kB));
+    return seg;
   }
 
   /**
@@ -2025,24 +2103,12 @@ const MapView = (() => {
     }
   }
 
-  /** Percorso completo di una corsa + posizione di ogni sua fermata lungo il percorso (indice in ll). In cache per corsa. */
+  /** Percorso completo di una corsa + posizione continua di ogni sua fermata lungo il percorso (Shape.snapStops). In cache per corsa. */
   function tripPath(idx, t) {
     return cached(idx, "p" + t, () => {
-      const { start, stop } = idx.tstops, n = start[t + 1] - start[t], s = idx.trips.shape[t];
-      const ll = shapeLatLngs(idx, s, t), at = new Int32Array(n);
-      if (!(s >= 0 && idx.shapes.start[s + 1] > idx.shapes.start[s])) { for (let i = 0; i < n; i++) at[i] = i; return { ll, at }; }
-      // ogni fermata si aggancia al punto più vicino della forma, procedendo solo in avanti
-      let prev = 0;
-      for (let i = 0; i < n; i++) {
-        const la = idx.stops.lat[stop[start[t] + i]], lo = idx.stops.lon[stop[start[t] + i]];
-        let bi = prev, bd = Infinity;
-        for (let j = prev; j < ll.length; j++) {
-          const d = Geo.dist(la, lo, ll[j][0], ll[j][1]);
-          if (d < bd) { bd = d; bi = j; } else if (bd < 50 && d > bd + 300) break;
-        }
-        at[i] = prev = bi;
-      }
-      return { ll, at };
+      const n = idx.tstops.start[t + 1] - idx.tstops.start[t], s = idx.trips.shape[t], ll = shapeLatLngs(idx, s, t);
+      if (!(s >= 0 && idx.shapes.start[s + 1] > idx.shapes.start[s])) { const at = new Float64Array(n); for (let i = 0; i < n; i++) at[i] = i; return { ll, at }; }
+      return { ll, at: Shape.snapStops(idx, t, ll).at };
     });
   }
 
@@ -2096,10 +2162,9 @@ const MapView = (() => {
         L.polyline(ll, { color: ink, weight: 4, opacity: l.estimated ? 0.45 : 0.8, dashArray: "1 9", lineCap: "round", lineJoin: "round", interactive: false }).addTo(journeyLayer);
         continue;
       }
-      const color = routeColor(idx, l.route), p = tripPath(idx, l.trip), k0 = start[l.trip], short = esc(idx.routes.short[l.route]);
-      L.polyline(p.ll, { color, weight: 4, opacity: 0.3, interactive: false }).addTo(journeyLayer);
-      const seg = p.ll.slice(p.at[l.kFrom - k0], p.at[l.kTo - k0] + 1);
-      if (seg.length < 2) for (let k = l.kFrom; k <= l.kTo; k++) seg.push([idx.stops.lat[stop[k]], idx.stops.lon[stop[k]]]);
+      const color = routeColor(idx, l.route), short = esc(idx.routes.short[l.route]);
+      L.polyline(tripPath(idx, l.trip).ll, { color, weight: 4, opacity: 0.3, interactive: false }).addTo(journeyLayer);
+      const seg = ridePath(idx, l.trip, l.kFrom, l.kTo);    // esattamente da fermata di salita a fermata di discesa
       L.polyline(seg, { color: surf, weight: 11, opacity: 0.95, interactive: false }).addTo(journeyLayer);
       L.polyline(seg, { color, weight: 7, opacity: 1, interactive: false }).addTo(journeyLayer);
       chevrons(seg, color);
