@@ -334,6 +334,10 @@ button.badge { border: 0; }
 .via .badge.metro { width: 26px; min-width: 26px; }
 .jkey { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 8px 0 0; font-size: 12px; color: var(--muted); }
 .jkey .k { display: inline-flex; align-items: center; gap: 5px; }
+/* confronto con il percorso tutto a piedi */
+.advice { margin-top: 10px; padding: 9px 12px; border-left: 3px solid var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); border-radius: 0 var(--r-sm) var(--r-sm) 0; font-size: 13px; }
+.advice .linkish { display: block; margin-top: 4px; font-size: 13px; }
+.advice-min { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
 .jkey .arrow { color: var(--ink); }
 .jkey .stop-mark { width: 9px; height: 9px; border-width: 2.5px; color: var(--ink); }
 
@@ -645,6 +649,10 @@ const Config = {
   staticMaxAgeMs: 3 * 24 * 3600 * 1000,            // riscarica lo zip GTFS ogni 3 giorni
   transferBufferSec: 60,                           // margine minimo per un cambio
   rideGainSec: 120,                                // un mezzo/cambio in più si propone solo se fa arrivare almeno 2 min prima
+  // "meglio a piedi" (Engine.walkAdvice): i mezzi devono far guadagnare almeno gainLive (orari in tempo reale per tutte le corse)
+  // o gainSched (orari programmati) + perRide per ogni mezzo oltre il primo, OPPURE far camminare molto meno
+  // (almeno max(minSavedM, minSavedFrac × percorso a piedi)); altrimenti si suggerisce di andare a piedi
+  walkAdvice: { gainLiveSec: 120, gainSchedSec: 240, perRideSec: 120, minSavedM: 300, minSavedFrac: 0.4 },
   indexVersion: 3,
 };
 
@@ -1703,6 +1711,27 @@ const Engine = {
     }
     return Engine._summary(res, out.filter((l) => l.type === "ride" || l.dist >= 1), bestT);
   },
+  /**
+   * Andare tutto a piedi conviene? Confronta l'itinerario coi mezzi j con il percorso a piedi diretto, senza il limite
+   * per tratto (camminando si farebbe comunque quasi la stessa strada) ma entro il tempo a disposizione.
+   * Si suggerisce di camminare quando i mezzi fanno risparmiare poco sia in tempo sia in strada a piedi
+   * (soglie in Config.walkAdvice; più severe se gli orari non sono in tempo reale o ci sono cambi).
+   * Restituisce null se j non usa mezzi o non c'è un percorso a piedi, altrimenti
+   * { walk: itinerario a piedi, suggest, gainSec: secondi guadagnati coi mezzi, savedM: metri a piedi risparmiati, live, minGainSec }.
+   */
+  walkAdvice(idx, res, j, lat, lon) {
+    if (!j || !j.rides) return null;
+    const o = res.opts, A = Config.walkAdvice, P = { lat, lon }, O = { lat: o.lat, lon: o.lon };
+    const p = Walk.path(o.walk, idx, O, P, Math.max(o.maxWalk, (res.end - res.nowSec) * o.walkMps));
+    if (!p) return null;
+    const arrive = res.nowSec + p.dist / o.walkMps;
+    const walk = Engine._summary(res, [{ type: "walk", from: O, to: P, dist: p.dist, dep: res.nowSec, arr: arrive, pts: p.pts, estimated: p.estimated }], arrive);
+    const rides = j.legs.filter((l) => l.type === "ride"), live = rides.every((l) => l.live);
+    const gainSec = arrive - j.arrive, savedM = p.dist - j.walk;
+    const minGainSec = (live ? A.gainLiveSec : A.gainSchedSec) + A.perRideSec * (rides.length - 1);
+    const suggest = arrive <= res.end && gainSec < minGainSec && savedM < Math.max(A.minSavedM, A.minSavedFrac * p.dist);
+    return { walk, suggest, gainSec, savedM, live, minGainSec };
+  },
   _summary(res, legs, arrive) {
     const rides = legs.filter((l) => l.type === "ride"), mps = res.opts.walkMps;
     const walk = legs.reduce((a, l) => a + (l.type === "walk" ? l.dist : 0), 0);
@@ -2332,7 +2361,13 @@ const UI = {
     $("#btn-locate").addEventListener("click", UI.locate);
     $("#view-main").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) UI.select(+b.dataset.route); });
     $("#view-detail").addEventListener("click", (e) => { if (e.target.closest("[data-back]")) UI.select(-1); });
-    $("#view-journey").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) UI.select(+b.dataset.route); else if (e.target.closest("[data-back]")) UI.closeJourney(); });
+    $("#view-journey").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-route]");
+      if (b) UI.select(+b.dataset.route);
+      else if (e.target.closest("[data-back]")) UI.closeJourney();
+      else if (e.target.closest("[data-ride-anyway]")) UI.setRideAnyway(true);
+      else if (e.target.closest("[data-walk-instead]")) UI.setRideAnyway(false);
+    });
     $("#banner-x").addEventListener("click", () => ($("#banner").hidden = true));
     $("#status").addEventListener("click", () => Settings.open());
     $("#btn-settings").addEventListener("click", () => Settings.open());
@@ -2416,7 +2451,7 @@ const UI = {
       const rides = j ? j.legs.filter((l) => l.type === "ride") : [];
       html = !j ? "<b>Destinazione non raggiungibile</b> con queste impostazioni"
         : `<b>Arrivi alle ${Time.clock(idx.dayStart, j.arrive)}</b> · ${fmtDur(j.arrive - res.nowSec)} · ` +
-          (rides.length ? rides.map((l) => `<span class="badge ${MODES[idx.routes.mode[l.route]].key}" style="background:${MapView.routeColor(idx, l.route)}">${esc(idx.routes.short[l.route])}</span>`).join("›") : "solo a piedi") +
+          (rides.length ? rides.map((l) => `<span class="badge ${MODES[idx.routes.mode[l.route]].key}" style="background:${MapView.routeColor(idx, l.route)}">${esc(idx.routes.short[l.route])}</span>`).join("›") : state.walkAdv && state.walkAdv.suggest ? "meglio a piedi" : "solo a piedi") +
           ` · ${fmtDist(j.walk)} a piedi`;
     } else html = `<b>Area in ${state.prefs.budgetMin} min</b> · ${res.routes.size} linee · ${res.reachedStops} fermate`;
     if (UI._tripRes === html) return;
@@ -2480,7 +2515,11 @@ const UI = {
   drawMap() {
     const idx = state.idx, res = state.result; if (!idx || !res) return;
     if (state.view === "journey" && state.dest) {
-      state.journey = Engine.journey(idx, res, state.dest.lat, state.dest.lon);
+      // itinerario coi mezzi + confronto con il percorso tutto a piedi: se i mezzi convengono poco si mostra quello a piedi
+      // (l'utente può comunque scegliere i mezzi: state.rideAnyway)
+      const ride = Engine.journey(idx, res, state.dest.lat, state.dest.lon), adv = Engine.walkAdvice(idx, res, ride, state.dest.lat, state.dest.lon);
+      state.walkAdv = adv; state.rideJourney = ride;
+      state.journey = adv && adv.suggest && !state.rideAnyway ? adv.walk : ride;
       const pts = MapView.drawJourney(idx, state.journey, state.dest);
       const rides = state.journey ? state.journey.legs.filter((l) => l.type === "ride") : [];
       const focus = { routes: new Set(rides.map((l) => l.route)), trips: new Set(rides.map((l) => l.trip)) };
@@ -2504,12 +2543,27 @@ const UI = {
   tapPoint(lat, lon) {
     if (!state.idx || !state.result) return;
     if (!Engine.journey(state.idx, state.result, lat, lon)) { toast(`Fuori dall'area raggiungibile in ${state.prefs.budgetMin} min`); return; }
-    state.dest = { lat, lon }; state.selected = -1; state.journeyFit = true; UI.hintDone();
+    state.dest = { lat, lon }; state.selected = -1; state.journeyFit = true; state.rideAnyway = false; UI.hintDone();
     UI.show("journey");
     if (Sheet.state === "min" && $("#trip-panel").hidden) Sheet.set("mid");
     UI.drawMap(); UI.renderJourney(); UI.renderDetail();
   },
-  closeJourney() { state.dest = null; state.journey = null; UI.show("main"); UI.drawMap(); UI.renderJourney(); },
+  closeJourney() { state.dest = null; state.journey = null; state.walkAdv = null; state.rideAnyway = false; UI.show("main"); UI.drawMap(); UI.renderJourney(); },
+  /** Passa tra l'itinerario a piedi consigliato e quello coi mezzi. */
+  setRideAnyway(on) { state.rideAnyway = on; state.journeyFit = true; UI.drawMap(); UI.renderJourney(); },
+  /** Riquadro del confronto con il percorso tutto a piedi (Engine.walkAdvice). */
+  walkAdviceHtml() {
+    const a = state.walkAdv, r = state.rideJourney, idx = state.idx; if (!a || !r) return "";
+    const w = a.walk, names = r.legs.filter((l) => l.type === "ride").map((l) => esc(idx.routes.short[l.route])).join(" › ");
+    const gain = a.gainSec >= 60 ? `solo ${fmtDur(a.gainSec)} prima` : a.gainSec > -60 ? "più o meno alla stessa ora" : `${fmtDur(-a.gainSec)} dopo`;
+    const sched = a.live ? "" : " Gli orari dei mezzi non sono in tempo reale.";
+    if (a.suggest && !state.rideAnyway)
+      return `<div class="advice"><b>Meglio a piedi:</b> ${fmtDur(w.arrive - state.result.nowSec)} e ${fmtDist(w.walk)}. Con i mezzi (${names}) arriveresti ${gain} e cammineresti comunque ${fmtDist(r.walk)}.${sched}
+        <button class="linkish" type="button" data-ride-anyway>Vedi con i mezzi</button></div>`;
+    if (a.suggest) return `<div class="advice"><b>Consigliato a piedi:</b> ${fmtDur(w.arrive - state.result.nowSec)} e ${fmtDist(w.walk)}. <button class="linkish" type="button" data-walk-instead>Torna a piedi</button></div>`;
+    const late = w.arrive > state.result.end ? ", oltre il tempo a disposizione" : "";
+    return `<p class="advice-min">Tutto a piedi: ${fmtDur(w.arrive - state.result.nowSec)} e ${fmtDist(w.walk)}${late}. Con i mezzi guadagni ${a.gainSec >= 60 ? fmtDur(a.gainSec) : "poco tempo"} e ${fmtDist(Math.max(0, a.savedM))} a piedi.</p>`;
+  },
   renderJourney() {
     UI.renderTripRes();
     const box = $("#view-journey"), idx = state.idx, res = state.result, j = state.journey;
@@ -2529,6 +2583,7 @@ const UI = {
       <span class="meta">${rides.length ? `Esci entro le ${clock(j.leave)}${leaveIn >= 60 ? ` (tra ${fmtDur(leaveIn)})` : ""} · ${rides.length === 1 ? "1 mezzo, nessun cambio" : `${rides.length} mezzi, ${rides.length - 1} ${rides.length === 2 ? "cambio" : "cambi"}`}` : "Ci arrivi a piedi"} · ${fmtDist(j.walk)} a piedi</span>
       ${rides.length ? `<span class="j-chain">${rides.map((l) => badge(l.route)).join('<span class="j-arrow" aria-hidden="true">›</span>')}</span>` : ""}
     </div>
+    ${UI.walkAdviceHtml()}
     ${rides.length ? `<p class="jkey"><span class="k">Sulla mappa: ${arrowSvg(45)} dove va il mezzo (sali)</span><span class="k"><span class="stop-mark"></span> dove scendi</span><span class="k">Tocca un'etichetta per il nome della fermata</span></p>` : ""}
     <ol class="itin">`;
     const { stop, time } = idx.tstops;

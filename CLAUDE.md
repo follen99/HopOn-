@@ -38,6 +38,12 @@ L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto
 
 **Preferenza per camminare:** `Config.rideGainSec` (120 s) e `opts.preferWalk` (slider "Preferisco camminare sotto", default 200 m). La preferenza non supera mai il massimo a piedi: `Prefs.fix` (all'avvio e a ogni slider) porta i valori nei limiti di `Prefs.LIMITS` e mette `preferWalk = min(preferWish, maxWalk)`, dove `preferWish` è l'ultima scelta dell'utente (se il massimo risale, la preferenza torna lì). I due slider a piedi hanno la stessa scala 0–1000 m; i valori non ammessi sono tratteggiati sulla barra (`--a`/`--b`). Nel CSA un arrivo a una fermata con più corse vale solo se batte gli arrivi con meno corse di `Engine.margin(lastWalk)`: 120 s, oppure l'intero tempo dell'ultimo tratto a piedi se è ≤ `preferWalk`. Stessa regola in `Engine.journey` tra le opzioni per numero di corse. Gli itinerari e l'area disegnata finiscono solo da fermate dove si scende da un mezzo (`Engine.rideArrival`), così nessun tratto a piedi supera `maxWalk`.
 
+**Meglio a piedi (`Engine.walkAdvice`):** dopo `Engine.journey` l'itinerario coi mezzi si confronta con il percorso tutto a piedi. Questo non ha il limite per tratto, perché coi mezzi si camminerebbe comunque quasi altrettanto, ma deve stare entro il tempo a disposizione. Si suggerisce di camminare se i mezzi fanno guadagnare poco tempo **e** poca strada a piedi, con le soglie di `Config.walkAdvice`:
+- tempo: almeno 2 min se tutte le corse hanno orari in tempo reale, 4 min se programmati, più 2 min per ogni mezzo oltre il primo;
+- strada: almeno max(300 m, 40% del percorso a piedi).
+
+Nella vista itinerario si mostra allora il percorso a piedi con il riquadro "Meglio a piedi", con il pulsante "Vedi con i mezzi" (`state.rideAnyway`); altrimenti c'è una riga di confronto "Tutto a piedi: …".
+
 `Engine.isochrone` salva per ogni round e fermata il "genitore" (corsa + fermata di salita, oppure fermata da cui si arriva a piedi); `Engine.journey` lo usa per ricostruire l'itinerario verso un punto qualsiasi, `Engine.nextDepartures` dà i passaggi successivi a una fermata.
 
 **Interazioni sulla mappa:** tocco breve = "Come arrivarci" (vista `journey` nel pannello; fuori dall'area → messaggio breve); pressione prolungata ≥ 550 ms o clic destro = sposta la partenza; il PIN resta trascinabile. Le linee disegnate non sono toccabili (coprirebbero l'area): una linea si seleziona dalla lista, da un mezzo live o da un badge nell'itinerario.
