@@ -15,7 +15,7 @@ L'app è in **[hop-on.html](hop-on.html)** (un solo file, nessun build). Accanto
 - [tools/build-walk-tiles.mjs](tools/build-walk-tiles.mjs): Node senza dipendenze, legge un `.osm.pbf` (decoder PBF interno, due passaggi: relazioni poi nodi/vie) e il GTFS GTT, scrive le tessere della rete pedonale in `walk/` (gitignored).
 - [.github/workflows/pages.yml](.github/workflows/pages.yml): pubblica su GitHub Pages (`hop-on.html` → `index.html` + `walk/` generata da Geofabrik nord-ovest + `config.js`); istruzioni per l'utente in [README.md](README.md). Pages deve avere Source = GitHub Actions.
 - [tools/make-config.mjs](tools/make-config.mjs): scrive `config.js` (`window.HOPON_CONFIG = {proxy}`) dal secret/variabile `HOPON_PROXY` o dal file `.env` (entrambi `config.js` e `.env` sono gitignored). Senza proxy valido non scrive nulla.
-- `.claude/launch.json`: server locale `python -m http.server 8080` (nome `hopon`).
+- `.claude/launch.json`: server locale `python -m http.server 8080 --bind 0.0.0.0` (nome `hopon`), raggiungibile anche dalla rete locale (es. telefono su `http://<IP del PC>:8080/hop-on.html`; lì niente GPS perché non è https).
 
 `hop-on.html` è diviso in blocchi che diventeranno moduli:
 
@@ -76,7 +76,7 @@ Per l'interfaccia con i percorsi a piedi serve http: generare `walk/` (es. da BB
   - Zip GTT ~15,8 MB (stop_times.txt ~84 MB decompresso). `GtfsStatic.build` ~3,8 s su PC (sul telefono sarà molto di più → Web Worker), indice ~16 MB. 7.054 fermate, 215 linee, ~15.000 corse/giorno, ~430.000 connessioni. Isocrona 10–15 ms.
   - `routes.txt`: metro `METROU` con route_type 1 (classificata correttamente), 10 tram, 204 bus, **nessun treno** → la casella "Treni" oggi non ha effetto. CSV con tutti i campi tra virgolette.
   - `direction_id`, `trip_headsign` e `shapes.txt` presenti. `stop_sequence` sempre 1..n contiguo (usato da `Realtime._schedAt`).
-  - Posizioni mezzi: tutte con `bearing` e `timestamp`, età tipica ~2 min; ~83% con `trip_id`, tutti con `route_id`, tutti presenti nello zip.
+  - Posizioni mezzi: tutte con `bearing` e `timestamp`, età tipica ~2 min; ~83% con `trip_id`, tutti con `route_id`, tutti presenti nello zip. **La metro non c'è mai** (né posizioni né trip_update) e molte linee mancano: il 9 ottobre alle 10:50 il feed aveva 316 mezzi su 64 linee contro 517 corse in servizio su 119 linee (a volte il feed arriva vuoto). Per le linee senza nessun mezzo live l'app mostra la posizione stimata dall'orario (`Realtime.scheduled`, stile tratteggiato, `prefs.vehScheduled`); `prefs.vehAll` mostra i mezzi di tutte le linee nell'area visibile (quelli di linee non utili più tenui).
   - trip_update: nessun `delay` a livello corsa; per fermata mix di `delay` e `time`, solo `stop_sequence` (mai `stop_id`). Tutti i `trip_id` presenti nello zip.
   - Avvisi: ~150, quasi tutti collegati a linee; quelli con solo `agency_id` (es. "Linee 13 e 15 deviate") non vengono associati alle linee.
 - Rete pedonale (7 ottobre 2026): estratto BBBike Torino → 175 tessere, 3,8 MB; area di 6 km attorno a piazza Castello ≈ 1,3 MB, ~160.000 nodi, costruzione grafo ~0,4 s + aggancio fermate ~0,5 s su PC; isocrona con strade ~10 ms, area colorata ~30 ms. Tratti a piedi tipicamente 1,2–1,4 × la linea d'aria.
